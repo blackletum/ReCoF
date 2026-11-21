@@ -1,11 +1,11 @@
 # VR (work in progress)
 
-Cry of Fear in a headset through SteamVR, on the `openvr` branch. It only switches on when the game starts with `-vr` (or `-openvr`): without it client.dll never loads `openvr_api.dll` and every VR hook returns at once, so flat play, its settings in config.cfg and the speedrun tools are unchanged. Nothing has been played in a headset yet; the first tests are with a Meta Quest 3S. The bug rows are B510 to B530 in [bugs.md](bugs.md); the design is in the research report (`I:\COFPP\reports\ReCoF VR version research.md`, local).
+Cry of Fear in a headset through SteamVR, on the `openvr` branch. It only switches on when the game starts with `-vr` (or `-openvr`): without it client.dll never loads `openvr_api.dll` and every VR hook returns at once, so flat play, its settings in config.cfg and the speedrun tools are unchanged. The first headset tests are with a Meta Quest 3S (2026-11-21). The bug rows are B510 to B535 in [bugs.md](bugs.md); the design is in the research report (`I:\COFPP\reports\ReCoF VR version research.md`, local).
 
 ## Starting it
 
 1. Start Steam, then SteamVR. A Quest connects through Steam Link (free, wireless), Quest Link (cable or Air Link) with SteamVR, or Virtual Desktop in its SteamVR mode. Set the headset to 72 or 90 Hz: the game runs at most 100 frames a second.
-2. In the game folder, double-click `Play ReCoF VR.bat` (windowed 1280 x 720 with `-vr -novid`). `openvr_api.dll` must be next to `cof.exe`.
+2. In the game folder, double-click `Play ReCoF VR.bat`. If Steam runs as administrator (for example started from an administrator PowerShell), start the .bat from that same shell: a game started without administrator rights cannot reach that Steam and stops with "Failed to initialize authentication interface". Then (windowed 1280 x 720 with `-vr -novid`). `openvr_api.dll` must be next to `cof.exe`.
 3. The window on the desktop shows the left eye with the HUD over it. The console goes to `qconsole.log` next to `cof.exe`; its `ReCoF VR:` lines say what the headset reported and what went wrong.
 
 The HUD and the menus have the window's shape in the headset, so a 16:9 window gives a 16:9 screen.
@@ -36,7 +36,9 @@ Holsters: the right hand at the right hip, the left hip or over the right should
 - The head moves the eyes from where the game puts the player's eye (leaning a little is allowed, walking away from the body is not); a scene's camera turns the world while the head looks round in it.
 - The right hand holds the weapon model: its wrist sits on the controller and the arms are folded away. The left controller has its own hand, drawn from the weapon model's left hand, or the flashlight or lantern. Weapon models without a left hand, and empty hands, use Simon's hands from `v_actions.mdl`.
 - Shots leave from the gun in the hand and go where it points (the server takes the gun's position from each command and never fires through a wall between the eye and the hand): a red dot marks the spot. No 2D crosshair or sniper scope overlay in VR.
-- The HUD hangs in front of the head with its dark parts see-through; menus, the inventory, keypads and the console are on a fixed panel, used with a laser from the right hand.
+- The HUD hangs in front of the head with its dark parts see-through; menus, the inventory, keypads and the console are on a fixed panel, used with a laser from the right hand. With the game menu, its dialogs or the console open, the panel shows the game flat with the menu over it, in a dark room.
+- The weapon models are scaled round the wrist to a real forearm (Cry of Fear's are drawn far bigger than life, for the eye).
+- No screen noise or zoom blur in VR.
 - The grayscale of the black and white scenes and the screen fades are drawn in both eyes.
 - The near plane is 5 cm, so a gun raised to the eye is not cut.
 - Closing SteamVR during a game switches VR off and the game goes on flat.
@@ -52,6 +54,7 @@ Holsters: the right hand at the right hip, the left hip or over the right should
 | `rc_vr_snapturn`, `rc_vr_turnspeed` | 45, 180 | Snap turn degrees (0: smooth), smooth turn degrees a second |
 | `rc_vr_movehand` | 0 | 1: move towards where the left hand points |
 | `rc_vr_hidearms` | 1 | 0 shows the weapon models' arms |
+| `rc_vr_handscale` | 1 | The hands' size against a real one (1: a 26 cm forearm) |
 | `rc_vr_lefthand`, `rc_vr_lefthand_item` | 1, 1 | The left hand, and the flashlight or lantern in it |
 | `rc_vr_twohand` | 1 | Both hands on the gun with the left grip |
 | `rc_vr_handshots` | 1 | Shots leave from the gun; 0: from the eye, aimed at the point the gun points at |
