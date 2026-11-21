@@ -46,6 +46,7 @@
 #include "event_api.h"
 #include "demo_api.h"
 #include "rc_client.h"
+#include "rc_vr.h"
 #include "rc_prof.h"
 
 #include <windows.h>
@@ -317,7 +318,8 @@ void RcSmooth_Init( void )
 
 int RcSmooth_RenderOnly( void )
 {
-	return s_iRenderOnly;
+	// ReCoF VR: a headset's second eye draws again what the first eye drew, as a smooth frame does
+	return s_iRenderOnly || RcVR_SecondEye();
 }
 
 // in a picture of RcSmooth_Frame, the seconds since the game frame's picture computed its view, else 0
@@ -369,6 +371,10 @@ void RcSmooth_GameFrame( void )
 // (client_state_t, engine_hw client.h); pHostFrameTime is &host_frametime
 extern "C" __declspec( dllexport ) void RcSmooth_Frame( void ( *pfnUpdateScreen )( void ), double *pClTime, double *pHostFrameTime )
 {
+	// ReCoF VR: the headset paces the pictures (rc_vr.cpp); no pictures in between
+	if ( RcVR_Active() )
+		return;
+
 	RcProf_LimiterPass( pHostFrameTime );	// B366: the perf log counts the limiter's passes
 
 	double now = RcSmoothNow();

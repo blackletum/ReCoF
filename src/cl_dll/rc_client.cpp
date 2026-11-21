@@ -12,6 +12,7 @@
 #include "const.h"
 #include "pm_defs.h"
 #include "rc_client.h"
+#include "rc_vr.h"
 #include "rc_version.h"
 #include "rc_prof.h"
 #include "glmanager.h"
@@ -931,6 +932,7 @@ void RcClient_Init( void )
 	gEngfuncs.pfnRegisterVariable( "rc_voice_range", "1400", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "rc_voice_wall", "10", FCVAR_ARCHIVE );	// hw.dll sets it when the user disconnects (RcCoopReconnect)
 	RcVoice_Init();	// B422: push to talk or open mic, the microphone
+	RcVR_Init();	// ReCoF VR: only with -vr (rc_vr.cpp)
 	gEngfuncs.pfnAddCommand( "rc_coop_host", RcCoopHost_f );	// co-op spike: Steam relay networking
 	gEngfuncs.pfnAddCommand( "rc_coop_join", RcCoopJoin_f );
 	gEngfuncs.pfnAddCommand( "rc_coop_status", RcCoopStatus_f );
@@ -1272,7 +1274,7 @@ void RcViewmodelOffset( float *origin, const float *forward, const float *right,
 //-----------------------------------------------------------------------------
 int RcViewmodelFovBegin( void )
 {
-	if ( !rc_viewmodel_fov || rc_viewmodel_fov->value <= 0 || !gl.IsGLAllowed() )
+	if ( !rc_viewmodel_fov || rc_viewmodel_fov->value <= 0 || !gl.IsGLAllowed() || RcVR_Active() )
 		return 0;
 
 	float fov = rc_viewmodel_fov->value;

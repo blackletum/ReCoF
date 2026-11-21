@@ -34,6 +34,7 @@ extern "C"
 #include "HUDControl_guess.h"
 #include "RECBInventory_guess.h"
 #include "rc_client.h"
+#include "rc_vr.h"
 #include "rc_prof.h"	// ReCoF (B337)
 #include "rc_version.h"
 #include "windows.h"
@@ -1289,6 +1290,10 @@ void DLLEXPORT CL_CreateMove ( float frametime, struct usercmd_s *cmd, int activ
 			VectorCopy( oldangles, cmd->viewangles );
 		}
 	}
+
+	// ReCoF VR: the controllers' movement, buttons and aim (rc_vr.cpp); the wheelchair and a dead player keep
+	// the angles set above
+	RcVR_CreateMove( frametime, cmd, active, g_iAlive && !iWheelchair_guess );
 
 	if ( GetClientVoiceMgr()->m_bTalking )
 	{

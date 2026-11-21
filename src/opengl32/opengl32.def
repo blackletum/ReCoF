@@ -362,3 +362,5 @@ EXPORTS
 	wglUseFontOutlinesA = sys_wglUseFontOutlinesA @366
 	wglUseFontOutlinesW = sys_wglUseFontOutlinesW @367
 	RcSwapTimes = sys_RcSwapTimes
+	RcVrSetEye = sys_RcVrSetEye
+	RcVrSetSwapHook = sys_RcVrSetSwapHook

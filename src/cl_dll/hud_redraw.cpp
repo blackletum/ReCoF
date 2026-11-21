@@ -18,6 +18,7 @@
 #include <math.h>
 #include "hud.h"
 #include "rc_client.h"
+#include "rc_vr.h"
 #include "rc_prof.h"
 #include "cl_util.h"
 #include "vgui_TeamFortressViewport.h"
@@ -307,6 +308,8 @@ int CHud :: Redraw( float flTime, int intermission )
 {
 	char szText[128];
 	char szCmd[32];
+
+	RcVR_HudRedrawStart();	// ReCoF VR: the eyes are drawn, the 2D goes to the window (rc_vr.cpp)
 
 	ApplyPostEffects(); // buz
 	RcDrawVignette();	// ReCoF (B308): the corners darkened, under the HUD

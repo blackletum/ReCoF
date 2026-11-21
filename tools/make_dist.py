@@ -96,6 +96,11 @@ def main():
     for name in sorted(os.listdir(extra)) if os.path.isdir(extra) else []:
         shutil.copyfile(os.path.join(extra, name), os.path.join(DIST, name))
         print("added    %s" % name)
+    # ReCoF VR: SteamVR's API (BSD-3, src/external/openvr), loaded only with -vr (client.dll rc_vr.cpp)
+    openvr = os.path.join(ROOT, "src", "external", "openvr", "bin", "win32", "openvr_api.dll")
+    if os.path.isfile(openvr):
+        shutil.copyfile(openvr, os.path.join(DIST, "openvr_api.dll"))
+        print("added    openvr_api.dll")
     print("dist ready: %s" % DIST)
 
 

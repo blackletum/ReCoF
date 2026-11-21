@@ -18,6 +18,7 @@
 
 #include <math.h>
 #include "hud.h"
+#include "rc_vr.h"
 #include "cl_util.h"
 #include <stdlib.h>
 #include <memory.h>
@@ -43,6 +44,10 @@ int CHud::UpdateClientData(client_data_t *cdata, float time)
 	Think();
 
 	cdata->fov = m_flFOV * cl_fovmultiplier->value;//m_iFOV; buz
+
+	// ReCoF VR: the engine culls with this field of view: wide enough for a headset's eye
+	if ( RcVR_Active() )
+		cdata->fov = RcVR_CullFov();
 	
 	v_idlescale = m_iConcussionEffect;
 

@@ -24,6 +24,7 @@
 #include "rc_prof.h"	// ReCoF
 #include "rc_gpumodel.h"	// ReCoF (B287 step 4)
 #include "rc_client.h"	// ReCoF
+#include "rc_vr.h"	// ReCoF VR
 
 
 extern vec3_t	render_origin;
@@ -785,7 +786,7 @@ void PrepareRenderer( ref_params_t *pparams )
 	CreateAttenuationTextures();
 		
 	VectorCopy (pparams->vieworg, saved_view_orig);
-	viewFrustum.R_SetFrustum (pparams->viewangles, pparams->vieworg, pparams->viewsize);
+	viewFrustum.R_SetFrustum (pparams->viewangles, pparams->vieworg, RcVR_Active() ? RcVR_CullViewsize() : pparams->viewsize);	// ReCoF VR: an eye's frustum
 
 	// i'd like to draw world here, but engine will erase
 	// depth buffer after CalcRefDef returns :(

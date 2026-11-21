@@ -85,6 +85,7 @@ void VectorAngles( const float *forward, float *angles );
 #include "RECBInventory_guess.h"
 #include "rc_prof.h"	// ReCoF
 #include "rc_client.h"	// ReCoF
+#include "rc_vr.h"	// ReCoF VR
 
 extern engine_studio_api_t IEngineStudio;
 
@@ -2135,9 +2136,50 @@ static int V_IsOwnView( struct ref_params_s *pparams )
 	return pparams->health > 0;
 }
 
+// ReCoF VR (rc_vr.cpp): the game's view once a frame, and the end of each eye's pass
+static void V_VrGame( struct ref_params_s *pparams )
+{
+	RcProf_Count( RCC_PICTURES );
+	RcSpeedrun_View( pparams->paused, pparams->health );
+
+	if ( pparams->paused )
+	{
+		if ( iPaused_guess != 1 )
+			iPaused_guess = 1;
+
+		if ( !IrrKlangIsPaused_guess() )
+			IrrKlangSetPaused_guess( true );
+	}
+	else
+	{
+		iPaused_guess = 0;
+
+		if ( IrrKlangIsPaused_guess() )
+			IrrKlangSetPaused_guess( false );
+	}
+
+	V_CalcNormalRefdef( pparams );
+}
+
+static void V_VrPassEnd( struct ref_params_s *pparams )
+{
+	render_origin = pparams->vieworg;
+	render_angles = pparams->viewangles;
+	AngleVectors( render_angles, g_vecForward, g_vecRight, g_vecUp );
+	RendererCalcRefDef( pparams );
+}
+
 void DLLEXPORT V_CalcRefdef( struct ref_params_s *pparams )
 {
 	RcProfScope prof( RCP_VIEW );	// ReCoF
+
+	// ReCoF VR: each eye in its own pass (rc_vr.cpp)
+	if ( RcVR_Active() )
+	{
+		RcVR_CalcRefdef( pparams, V_VrGame, V_IsOwnView, V_VrPassEnd );
+		return;
+	}
+
 	int bFirstPass = !pparams->nextView;	// ReCoF (B315): the head shield's second pass is not a picture of its own
 	if ( bFirstPass )
 		RcProf_Count( RCC_PICTURES );	// ReCoF (B341)

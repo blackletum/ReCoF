@@ -31,6 +31,7 @@
 #include "rc_prof.h"	// ReCoF
 #include "rc_bones.h"	// ReCoF (B339)
 #include "rc_client.h"	// ReCoF
+#include "rc_vr.h"	// ReCoF VR
 
 //
 // Override the StudioModelRender virtual member functions here to implement custom bone
@@ -85,6 +86,10 @@ int R_StudioDrawModel( int flags )
 	RcProf_Count( RCC_MODELS );
 	if ( IEngineStudio.GetCurrentEntity() && IEngineStudio.GetCurrentEntity()->curstate.movetype == MOVETYPE_STEP )
 		RcProf_Count( RCC_MONSTERS );	// ReCoF (B337)
+
+	// ReCoF VR: the second eye draws what the first eye drew; its events (sounds, muzzle flashes, shells) fired there
+	if ( RcVR_SecondEye() )
+		flags &= ~STUDIO_EVENTS;
 
 	if (IEngineStudio.GetCurrentEntity() != IEngineStudio.GetViewEntity() && IEngineStudio.GetCurrentEntity()->curstate.renderfx != 161)
 		RendererDrawNormal(); // buz: make shure that world draws before any studiomodel

@@ -36,6 +36,7 @@
 #include "r_efx.h"
 #include "event_api.h"
 #include "rc_prof.h"	// ReCoF (B337)
+#include "rc_vr.h"	// ReCoF VR
 #include "rc_bones.h"	// ReCoF (B339)
 extern CGameStudioModelRenderer g_StudioRenderer;	// ReCoF (B339): GameStudioModelRenderer.cpp
 
@@ -815,6 +816,9 @@ void CStudioModelRenderer::StudioSetupBones ( void )
 
 		if ( !RcBones_Replay( this ) )
 			StudioSetupBonesNow();
+
+		// ReCoF VR: the weapon model's wrist on the controller, the arms folded away (rc_vr.cpp)
+		RcVR_AdjustBones( m_pCurrentEntity, m_pStudioHeader, m_pbonetransform, m_plighttransform );
 		return;
 	}
 

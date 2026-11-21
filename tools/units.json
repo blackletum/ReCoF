@@ -1558,6 +1558,10 @@
           "source": "src/cl_dll/rc_smooth.cpp"
         },
         {
+          "name": "cl_dll/rc_vr",
+          "source": "src/cl_dll/rc_vr.cpp"
+        },
+        {
           "name": "cl_dll/rc_discord",
           "source": "src/cl_dll/rc_discord.cpp"
         },
@@ -1836,6 +1840,7 @@
           "cl_dll/rc_speedrun",
           "cl_dll/rc_crash",
           "cl_dll/rc_smooth",
+          "cl_dll/rc_vr",
           "cl_dll/rc_discord",
           "cl_dll/rc_practice",
           "cl_dll/rc_steamnet",

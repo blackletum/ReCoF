@@ -10,6 +10,7 @@
 
 #include "hud.h"
 #include "rc_client.h"
+#include "rc_vr.h"
 #include "cl_util.h"
 #include "camera.h"
 #include "kbutton.h"
@@ -180,6 +181,12 @@ void Force_CenterView_f (void)
 		if ( !gHUD.m_bViewLock_guess )
 			gEngfuncs.SetViewAngles( (float *)viewangles );
 	}
+}
+
+// ReCoF VR (rc_vr.cpp): a menu, the console or a panel has the mouse, so the controller points and clicks
+int RcIN_MouseFree( void )
+{
+	return !mouseactive || g_iVisibleMouse || iMouseInUse;
 }
 
 /*

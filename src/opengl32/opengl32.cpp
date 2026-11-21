@@ -286,8 +286,46 @@ void sys_glEnd (void)
 	(*orig_glEnd) ();
 }
 
+// ReCoF VR (client.dll rc_vr.cpp, only with -vr): while an eye is drawn into its framebuffer, the engine's
+// projection (glFrustum in GL_PROJECTION mode, from R_SetupGL) takes the headset eye's four tangents, and a
+// viewport of the window's size (R_PolyBlend, GLBeginHud) or of the eye's size with the engine's window offsets
+// (R_SetupGL) covers the whole eye framebuffer. The swap calls the client first, which puts the 2D on its screen
+// and hands both eyes to SteamVR. Without -vr nothing is set and every call goes straight through
+static int		s_iRcVrEye;
+static float	s_rgRcVrTan[ 4 ];
+static int		s_iRcVrEyeW, s_iRcVrEyeH, s_iRcVrWinW, s_iRcVrWinH;
+static void		( __stdcall *s_pfnRcVrSwap )( HDC );
+
+void __stdcall sys_RcVrSetEye( int active, float l, float r, float b, float t, int eyeW, int eyeH, int winW, int winH )
+{
+	s_iRcVrEye = active;
+	s_rgRcVrTan[ 0 ] = l;
+	s_rgRcVrTan[ 1 ] = r;
+	s_rgRcVrTan[ 2 ] = b;
+	s_rgRcVrTan[ 3 ] = t;
+	s_iRcVrEyeW = eyeW;
+	s_iRcVrEyeH = eyeH;
+	s_iRcVrWinW = winW;
+	s_iRcVrWinH = winH;
+}
+
+void __stdcall sys_RcVrSetSwapHook( void ( __stdcall *pfn )( HDC ) )
+{
+	s_pfnRcVrSwap = pfn;
+}
+
 void sys_glFrustum (GLdouble left,  GLdouble right,  GLdouble bottom,  GLdouble top,  GLdouble zNear,  GLdouble zFar)
 {
+	if ( s_iRcVrEye )
+	{
+		GLint mode = 0;
+		(*orig_glGetIntegerv) ( GL_MATRIX_MODE, &mode );
+		if ( mode == GL_PROJECTION )
+		{
+			(*orig_glFrustum) ( s_rgRcVrTan[ 0 ] * zNear, s_rgRcVrTan[ 1 ] * zNear, s_rgRcVrTan[ 2 ] * zNear, s_rgRcVrTan[ 3 ] * zNear, zNear, zFar );
+			return;
+		}
+	}
 	(*orig_glFrustum) (left, right, bottom, top, zNear, zFar);
 }
 
@@ -406,6 +444,13 @@ void sys_glVertex3fv (const GLfloat *v)
 
 void sys_glViewport (GLint x,  GLint y,  GLsizei width,  GLsizei height)
 {
+	// ReCoF VR: the eye framebuffer's whole area (see sys_RcVrSetEye)
+	if ( s_iRcVrEye && ( ( width - s_iRcVrWinW + 2u <= 4u && height - s_iRcVrWinH + 2u <= 4u ) ||
+		( width - s_iRcVrEyeW + 2u <= 4u && height - s_iRcVrEyeH + 2u <= 4u ) ) )
+	{
+		(*orig_glViewport) ( 0, 0, s_iRcVrEyeW, s_iRcVrEyeH );
+		return;
+	}
 	(*orig_glViewport) (x, y, width, height);
 }
 
@@ -437,6 +482,9 @@ static int				s_iRcSwaps;
 
 void sys_wglSwapBuffers(HDC hDC)
 {
+	if ( s_pfnRcVrSwap )
+		s_pfnRcVrSwap( hDC );	// ReCoF VR
+
 	LARGE_INTEGER a, b;
 	QueryPerformanceCounter( &a );
 	(*orig_wglSwapBuffers) (hDC);
