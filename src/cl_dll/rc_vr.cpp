@@ -162,6 +162,7 @@ static float		s_rgHeadGame[ 3 ];					// the head centre in the game this frame
 static float		s_flBaseYaw;						// the yaw the tracking space is turned by this frame
 static float		s_rgGameEye[ 3 ];					// where the game puts the eye (before the head offset)
 static bool			s_bOwnView = true;
+static int			s_iWaterLevel;						// the view's water level (2 or more: the head is under)
 static float		s_flCamHmdYaw;						// the head's yaw when a camera began
 static bool			s_bWasCamera;
 static float		s_flSmoothZ;
@@ -207,7 +208,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -355,6 +356,8 @@ bool RcVR_Init( void )
 	rc_vr_lefthand_item	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_lefthand_item", "1", FCVAR_ARCHIVE );
 	rc_vr_lefthand		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_lefthand", "1", FCVAR_ARCHIVE );
 	rc_vr_swing			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_swing", "2.2", FCVAR_ARCHIVE );
+	rc_vr_holsters		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_holsters", "1", FCVAR_ARCHIVE );
+	rc_vr_hip_drop		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_hip_drop", "0.6", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -802,6 +805,7 @@ void RcVR_CalcRefdef( struct ref_params_s *pparams, void ( *pfnGame )( struct re
 		pfnGame( pparams );	// V_CalcNormalRefdef and the rest; sets nextView 1 if Cry of Fear wants a head shield pass
 		s_bShield = pparams->nextView != 0;
 		s_bOwnView = pfnOwnView( pparams ) != 0;
+		s_iWaterLevel = pparams->waterlevel;
 
 		// the game's eye: own view without bob (the step smoothing kept), a camera as it is
 		float eye[ 3 ];
@@ -1314,6 +1318,38 @@ static void RcVrPointerInput( void )
 		RcVrKey( VK_ESCAPE );
 }
 
+// the quick slot holster the right hand is in: 1 right hip, 2 left hip, 3 over the right shoulder, 0 none. The
+// body faces where the head faces; the hips are rc_vr_hip_drop metres under the eyes
+static int RcVrHolster( const RcVrHand_t &R )
+{
+	if ( !R.valid || !RcVrHmdValid() )
+		return 0;
+	const vr::HmdMatrix34_t &m = s_rgPoses[ vr::k_unTrackedDeviceIndex_Hmd ].mDeviceToAbsoluteTracking;
+	float f[ 3 ] = { -m.m[ 0 ][ 2 ], 0, -m.m[ 2 ][ 2 ] };
+	float len = sqrtf( f[ 0 ] * f[ 0 ] + f[ 2 ] * f[ 2 ] );
+	if ( len < 0.01f )
+		return 0;
+	f[ 0 ] /= len; f[ 2 ] /= len;
+	float r[ 3 ] = { -f[ 2 ], 0, f[ 0 ] };
+	float d[ 3 ] = { R.tpos[ 0 ] - m.m[ 0 ][ 3 ], R.tpos[ 1 ] - m.m[ 1 ][ 3 ], R.tpos[ 2 ] - m.m[ 2 ][ 3 ] };
+	float x = d[ 0 ] * r[ 0 ] + d[ 2 ] * r[ 2 ];		// right
+	float z = d[ 0 ] * f[ 0 ] + d[ 2 ] * f[ 2 ];		// forward
+	float y = d[ 1 ];									// up
+	float drop = rc_vr_hip_drop->value;
+	struct { float x, y, z, radius; } zones[ 3 ] = {
+		{ 0.22f, -drop, 0.0f, 0.2f },		// right hip
+		{ -0.22f, -drop, 0.0f, 0.2f },		// left hip
+		{ 0.15f, -0.1f, -0.15f, 0.2f },		// over the right shoulder
+	};
+	for ( int i = 0; i < 3; i++ )
+	{
+		float dx = x - zones[ i ].x, dy = y - zones[ i ].y, dz = z - zones[ i ].z;
+		if ( dx * dx + dy * dy + dz * dz < zones[ i ].radius * zones[ i ].radius )
+			return i + 1;
+	}
+	return 0;
+}
+
 void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bAim )
 {
 	if ( !s_bActive )
@@ -1400,13 +1436,33 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 		s_pSystem->TriggerHapticPulse( R.index, 0, 2000 );
 	RcVrButton( RCVB_ATTACK, bFire || bSwing );
 	RcVrButton( RCVB_ATTACK2, L.state.rAxis[ 1 ].x > 0.6f );
-	RcVrButton( RCVB_USE, RcVrPressed( R, vr::k_EButton_Grip ) );
+	// the right grip in a holster takes its quick slot (a buzz when the hand comes into one); elsewhere it uses
+	static int s_iLastZone;
+	static bool s_bGripHolster;
+	int zone = rc_vr_holsters->value ? RcVrHolster( R ) : 0;
+	if ( zone && zone != s_iLastZone && R.valid )
+		s_pSystem->TriggerHapticPulse( R.index, 0, 800 );
+	s_iLastZone = zone;
+	bool bGrip = RcVrPressed( R, vr::k_EButton_Grip );
+	if ( bGrip && !RcVrWasPressed( R, vr::k_EButton_Grip ) && zone )
+	{
+		char sz[ 32 ];
+		_snprintf( sz, sizeof( sz ), "quicksel %d\n", zone );
+		sz[ sizeof( sz ) - 1 ] = 0;
+		gEngfuncs.pfnClientCmd( sz );
+		s_iQuickSlot = zone;
+		s_bGripHolster = true;
+	}
+	if ( !bGrip )
+		s_bGripHolster = false;
+	RcVrButton( RCVB_USE, bGrip && !s_bGripHolster );
 	RcVrButton( RCVB_RELOAD, RcVrPressed( R, vr::k_EButton_A ) );
 	RcVrButton( RCVB_DODGE, RcVrPressed( L, vr::k_EButton_Grip ) && !RcVrPressed( R, vr::k_EButton_Grip ) );
 	RcVrButton( RCVB_SPRINT, RcVrPressed( L, vr::k_EButton_SteamVR_Touchpad ) );
 	RcVrButton( RCVB_INVENTORY, RcVrPressed( L, vr::k_EButton_A ) );
-	RcVrButton( RCVB_JUMP, R.state.rAxis[ 0 ].y > 0.75f );
-	RcVrButton( RCVB_DUCK, R.state.rAxis[ 0 ].y < -0.75f );
+	bool bStraight = fabsf( R.state.rAxis[ 0 ].x ) < 0.5f;	// not while the stick turns
+	RcVrButton( RCVB_JUMP, bStraight && R.state.rAxis[ 0 ].y > 0.75f );
+	RcVrButton( RCVB_DUCK, bStraight && R.state.rAxis[ 0 ].y < -0.75f );
 
 	// B: the next quick slot
 	if ( RcVrPressed( R, vr::k_EButton_ApplicationMenu ) && !RcVrWasPressed( R, vr::k_EButton_ApplicationMenu ) )
@@ -1443,9 +1499,22 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 	// aim: the server shoots from the eye, so it is aimed at the point the right hand points at
 	float aim[ 3 ] = { ang[ 0 ], ang[ 1 ], 0 };
 	s_bAimPoint = false;
+	bool bHeadAim = gHUD.m_iLadder_guess || s_iWaterLevel >= 2;
 	if ( !bAim )
 	{
 		// the wheelchair or a dead player: the game's own angles
+	}
+	else if ( bHeadAim && RcVrHmdValid() )
+	{
+		// on a ladder or under water the view's pitch is the way up or down: the head gives it
+		const vr::HmdMatrix34_t &m = s_rgPoses[ vr::k_unTrackedDeviceIndex_Hmd ].mDeviceToAbsoluteTracking;
+		float tf[ 3 ] = { -m.m[ 0 ][ 2 ], -m.m[ 1 ][ 2 ], -m.m[ 2 ][ 2 ] }, f[ 3 ];
+		RcVrDirToGame( tf, f, s_flTurnYaw );
+		float sp = -f[ 2 ];
+		if ( sp > 1 ) sp = 1;
+		if ( sp < -1 ) sp = -1;
+		aim[ 0 ] = asinf( sp ) * 180 / RCVR_PI;
+		aim[ 1 ] = atan2f( f[ 1 ], f[ 0 ] ) * 180 / RCVR_PI;
 	}
 	else if ( R.valid && s_bOwnView )
 	{
