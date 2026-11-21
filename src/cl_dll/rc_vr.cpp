@@ -589,6 +589,19 @@ static bool RcVrMakeGL( void )
 		return s_iGLState > 0;
 	s_iGLState = -1;
 
+	// B532: the first swap is the main menu, before any map: the client's GL table (glmanager.cpp) is loaded by
+	// the first HUD_VidInit, at the first map. Load it here, with the engine's context current (VidInit does
+	// nothing once it is loaded).
+	if ( !gl.IsGLAllowed() )
+	{
+		gl.VidInit();
+		if ( !gl.IsGLAllowed() || !gl.wglGetProcAddress )
+		{
+			gEngfuncs.Con_Printf( "ReCoF VR: the client's OpenGL functions did not load, the headset gets no picture\n" );
+			return false;
+		}
+	}
+
 	s_gl.GenFramebuffers = (RcGlGenFramebuffers_t)RcVrGL( "glGenFramebuffers", "glGenFramebuffersEXT" );
 	s_gl.BindFramebuffer = (RcGlBindFramebuffer_t)RcVrGL( "glBindFramebuffer", "glBindFramebufferEXT" );
 	s_gl.FramebufferTexture2D = (RcGlFramebufferTexture2D_t)RcVrGL( "glFramebufferTexture2D", "glFramebufferTexture2DEXT" );
