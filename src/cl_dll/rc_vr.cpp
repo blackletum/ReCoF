@@ -79,6 +79,15 @@
 #ifndef GL_TEXTURE0
 #define GL_TEXTURE0						0x84C0
 #endif
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER				0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER				0x8CA9
+#endif
+#ifndef GL_MAX_SAMPLES
+#define GL_MAX_SAMPLES					0x8D57
+#endif
 #ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE				0x812F
 #endif
@@ -91,6 +100,8 @@ typedef void	( APIENTRY *RcGlBindRenderbuffer_t )( GLenum, GLuint );
 typedef void	( APIENTRY *RcGlRenderbufferStorage_t )( GLenum, GLenum, GLsizei, GLsizei );
 typedef void	( APIENTRY *RcGlFramebufferRenderbuffer_t )( GLenum, GLenum, GLenum, GLuint );
 typedef GLenum	( APIENTRY *RcGlCheckFramebufferStatus_t )( GLenum );
+typedef void	( APIENTRY *RcGlRenderbufferStorageMultisample_t )( GLenum, GLsizei, GLenum, GLsizei, GLsizei );
+typedef void	( APIENTRY *RcGlBlitFramebuffer_t )( GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum );
 typedef void	( APIENTRY *RcGlGenTextures_t )( GLsizei, GLuint * );
 typedef void	( APIENTRY *RcGlLineWidth_t )( GLfloat );
 typedef void	( APIENTRY *RcGlPointSize_t )( GLfloat );
@@ -107,6 +118,8 @@ static struct
 	RcGlRenderbufferStorage_t		RenderbufferStorage;
 	RcGlFramebufferRenderbuffer_t	FramebufferRenderbuffer;
 	RcGlCheckFramebufferStatus_t	CheckFramebufferStatus;
+	RcGlRenderbufferStorageMultisample_t	RenderbufferStorageMultisample;
+	RcGlBlitFramebuffer_t			BlitFramebuffer;
 	RcGlGenTextures_t				GenTextures;
 	RcGlLineWidth_t					LineWidth;
 	RcGlPointSize_t					PointSize;
@@ -140,6 +153,9 @@ static float		s_rgTan[ 2 ][ 4 ];					// each eye's left, right, bottom, top tang
 static vr::HmdMatrix34_t s_rgEyeToHead[ 2 ];
 
 static GLuint		s_rgFbo[ 2 ], s_rgEyeTex[ 2 ], s_rgDepth[ 2 ];
+static GLuint		s_rgMsFbo[ 2 ], s_rgMsColor[ 2 ], s_rgMsDepth[ 2 ];	// multisampled eyes (rc_vr_msaa), resolved into the above
+static int			s_iSamples;
+static bool			s_bResolved;						// the eyes were resolved this frame
 static GLuint		s_texScreen;						// the window's 2D, copied at the swap
 static int			s_iScreenW, s_iScreenH;
 static GLuint		s_iProgram;							// the 2D's alpha from its brightness
@@ -211,7 +227,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_msaa, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -363,6 +379,7 @@ bool RcVR_Init( void )
 	rc_vr_hip_drop		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_hip_drop", "0.6", FCVAR_ARCHIVE );
 	rc_vr_physcrouch	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_physcrouch", "1", FCVAR_ARCHIVE );
 	rc_vr_twohand		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_twohand", "1", FCVAR_ARCHIVE );
+	rc_vr_msaa			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_msaa", "4", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -531,6 +548,36 @@ static const char *s_pszVrFragment =
 	"  gl_FragColor = vec4( rgb, a * fade );\n"
 	"}\n";
 
+static bool RcVrMakeMsEye( int e )
+{
+	s_gl.GenRenderbuffers( 1, &s_rgMsColor[ e ] );
+	s_gl.BindRenderbuffer( GL_RENDERBUFFER, s_rgMsColor[ e ] );
+	s_gl.RenderbufferStorageMultisample( GL_RENDERBUFFER, s_iSamples, GL_RGBA8, s_iEyeW, s_iEyeH );
+	s_gl.GenRenderbuffers( 1, &s_rgMsDepth[ e ] );
+	s_gl.BindRenderbuffer( GL_RENDERBUFFER, s_rgMsDepth[ e ] );
+	s_gl.RenderbufferStorageMultisample( GL_RENDERBUFFER, s_iSamples, GL_DEPTH24_STENCIL8, s_iEyeW, s_iEyeH );
+	s_gl.GenFramebuffers( 1, &s_rgMsFbo[ e ] );
+	s_gl.BindFramebuffer( GL_FRAMEBUFFER, s_rgMsFbo[ e ] );
+	s_gl.FramebufferRenderbuffer( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, s_rgMsColor[ e ] );
+	s_gl.FramebufferRenderbuffer( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, s_rgMsDepth[ e ] );
+	s_gl.FramebufferRenderbuffer( GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, s_rgMsDepth[ e ] );
+	GLenum status = s_gl.CheckFramebufferStatus( GL_FRAMEBUFFER );
+	if ( status == GL_FRAMEBUFFER_COMPLETE )
+	{
+		gl.glViewport( 0, 0, s_iEyeW, s_iEyeH );
+		gl.glClearColor( 0, 0, 0, 1 );
+		gl.glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
+	}
+	s_gl.BindFramebuffer( GL_FRAMEBUFFER, 0 );
+	s_gl.BindRenderbuffer( GL_RENDERBUFFER, 0 );
+	if ( status != GL_FRAMEBUFFER_COMPLETE )
+	{
+		gEngfuncs.Con_Printf( "ReCoF VR: %dx multisampling refused (0x%x), the eyes go without\n", s_iSamples, status );
+		return false;
+	}
+	return true;
+}
+
 static bool RcVrMakeGL( void )
 {
 	if ( s_iGLState )
@@ -545,6 +592,8 @@ static bool RcVrMakeGL( void )
 	s_gl.RenderbufferStorage = (RcGlRenderbufferStorage_t)RcVrGL( "glRenderbufferStorage", "glRenderbufferStorageEXT" );
 	s_gl.FramebufferRenderbuffer = (RcGlFramebufferRenderbuffer_t)RcVrGL( "glFramebufferRenderbuffer", "glFramebufferRenderbufferEXT" );
 	s_gl.CheckFramebufferStatus = (RcGlCheckFramebufferStatus_t)RcVrGL( "glCheckFramebufferStatus", "glCheckFramebufferStatusEXT" );
+	s_gl.RenderbufferStorageMultisample = (RcGlRenderbufferStorageMultisample_t)RcVrGL( "glRenderbufferStorageMultisample", "glRenderbufferStorageMultisampleEXT" );
+	s_gl.BlitFramebuffer = (RcGlBlitFramebuffer_t)RcVrGL( "glBlitFramebuffer", "glBlitFramebufferEXT" );
 	s_gl.ActiveTexture = (RcGlActiveTexture_t)RcVrGL( "glActiveTexture", "glActiveTextureARB" );
 	HMODULE hGL = GetModuleHandleA( "opengl32.dll" );
 	s_gl.GenTextures = (RcGlGenTextures_t)GetProcAddress( hGL, "glGenTextures" );
@@ -561,6 +610,19 @@ static bool RcVrMakeGL( void )
 	GLint iOldTex = 0;
 	gl.glGetIntegerv( GL_TEXTURE_BINDING_2D, &iOldTex );
 	bool ok = RcVrMakeEye( 0 ) && RcVrMakeEye( 1 );
+
+	// multisampling: the engine draws into multisampled eyes, resolved into the eye textures before the 2D
+	s_iSamples = 0;
+	if ( ok && rc_vr_msaa->value >= 2 && s_gl.RenderbufferStorageMultisample && s_gl.BlitFramebuffer )
+	{
+		GLint iMax = 0;
+		gl.glGetIntegerv( GL_MAX_SAMPLES, &iMax );
+		s_iSamples = (int)rc_vr_msaa->value;
+		if ( s_iSamples > iMax )
+			s_iSamples = iMax;
+		if ( s_iSamples < 2 || !RcVrMakeMsEye( 0 ) || !RcVrMakeMsEye( 1 ) )
+			s_iSamples = 0;
+	}
 
 	s_gl.GenTextures( 1, &s_texScreen );
 	gl.glBindTexture( GL_TEXTURE_2D, iOldTex );
@@ -585,7 +647,8 @@ static bool RcVrMakeGL( void )
 	if ( pfnSwap )
 		pfnSwap( 0 );
 
-	gEngfuncs.Con_Printf( "ReCoF VR: OpenGL %s, eye framebuffers ready, screen shader %s\n", (const char *)gl.glGetString( GL_VERSION ), s_iProgram ? "on" : "off (additive)" );
+	gEngfuncs.Con_Printf( "ReCoF VR: OpenGL %s, eye framebuffers ready, %dx multisampling, screen shader %s\n", (const char *)gl.glGetString( GL_VERSION ),
+		s_iSamples, s_iProgram ? "on" : "off (additive)" );
 	s_iGLState = 1;
 	return true;
 }
@@ -778,11 +841,27 @@ static void RcVrWindowSize( int &w, int &h )
 	h = ScreenHeight > 0 ? ScreenHeight : 480;
 }
 
+// the multisampled eyes into the eye textures, once a frame after the 3D
+static void RcVrResolve( void )
+{
+	if ( s_bResolved || !s_iSamples )
+		return;
+	s_bResolved = true;
+	for ( int e = 0; e < 2; e++ )
+	{
+		s_gl.BindFramebuffer( GL_READ_FRAMEBUFFER, s_rgMsFbo[ e ] );
+		s_gl.BindFramebuffer( GL_DRAW_FRAMEBUFFER, s_rgFbo[ e ] );
+		s_gl.BlitFramebuffer( 0, 0, s_iEyeW, s_iEyeH, 0, 0, s_iEyeW, s_iEyeH, GL_COLOR_BUFFER_BIT, GL_NEAREST );
+	}
+	s_gl.BindFramebuffer( GL_FRAMEBUFFER, 0 );
+}
+
 static void RcVrBindEye( int e )
 {
 	int winW, winH;
 	RcVrWindowSize( winW, winH );
-	s_gl.BindFramebuffer( GL_FRAMEBUFFER, s_rgFbo[ e ] );
+	s_bResolved = false;
+	s_gl.BindFramebuffer( GL_FRAMEBUFFER, s_iSamples ? s_rgMsFbo[ e ] : s_rgFbo[ e ] );
 	s_bEyeBound = true;
 	gl.glViewport( 0, 0, s_iEyeW, s_iEyeH );
 	if ( s_pfnSetEye )
@@ -1141,6 +1220,7 @@ void RcVR_HudRedrawStart( void )
 	if ( !s_bEyeBound )
 		return;
 
+	RcVrResolve();
 	RcVrFadeLeftEye();
 	RcVrGrayEyes();
 	RcVrUnbindEye();
@@ -1998,6 +2078,8 @@ static void __stdcall RcVrSwap( HDC hDC )
 	if ( !RcVrMakeGL() )
 		return;
 
+	if ( s_bEyesDrawn )
+		RcVrResolve();	// when HUD_Redraw did not run after the eyes
 	RcVrUnbindEye();
 
 	// GL state the engine and the client expect back
