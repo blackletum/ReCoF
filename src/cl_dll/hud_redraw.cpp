@@ -498,7 +498,7 @@ int CHud :: Redraw( float flTime, int intermission )
 			DrawHudString(XRES(10), YRES(350), XRES(600), "Using Gas Mask", 180, 180, 180);
 	}
 
-	if (g_iGunMode == 3) // buz: special sniper scope
+	if (g_iGunMode == 3 && !RcVR_Active()) // buz: special sniper scope (ReCoF VR: not on a screen fixed to the head; the aim dot shows the shot)
 	{
 		if (IEngineStudio.IsHardware())
 			OrthoScope();
