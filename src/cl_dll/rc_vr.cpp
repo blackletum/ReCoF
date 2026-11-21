@@ -989,6 +989,105 @@ static void RcVrFadeLeftEye( void )
 	gl.glPopMatrix();
 }
 
+// Cry of Fear's grayscale (the black and white scenes, grey fades, the TV frame) on each eye, as ApplyPostEffects
+// (gl_postprocess.cpp) puts it on the window's picture in flat play: the eye copied into a texture and drawn back
+// in grey with the game's own factor, before the HUD
+float GetGrayscaleFactor( void );	// gl_postprocess.cpp
+static GLuint	s_texGray, s_iGrayProgram;
+static int		s_iGrayTex, s_iGrayAmount, s_iGrayState;
+
+static const char *s_pszGrayFragment =
+	"uniform sampler2D tex; uniform float amount;\n"
+	"void main() {\n"
+	"  vec3 c = texture2D( tex, gl_TexCoord[0].xy ).rgb;\n"
+	"  float l = dot( c, vec3( 0.32, 0.59, 0.09 ) );\n"
+	"  gl_FragColor = vec4( l, l, l, amount );\n"
+	"}\n";
+
+static void RcVrGrayEyes( void )
+{
+	cvar_t *pPost = gEngfuncs.pfnGetCvarPointer( "gl_posteffects" );
+	if ( pPost && !pPost->value )
+		return;
+	float amount = GetGrayscaleFactor();
+	if ( amount <= 0 || amount > 1 )
+		return;
+
+	if ( !s_iGrayState )
+	{
+		s_iGrayState = -1;
+		if ( RcGlslInit() )
+		{
+			static const int rgIndex[] = { 0 };
+			static const char *rgName[] = { NULL };
+			s_iGrayProgram = RcGlslProgram( "vr grayscale", s_pszVrVertex, s_pszGrayFragment, rgIndex, rgName );
+			if ( s_iGrayProgram )
+			{
+				s_iGrayTex = rcgl.glGetUniformLocation( s_iGrayProgram, "tex" );
+				s_iGrayAmount = rcgl.glGetUniformLocation( s_iGrayProgram, "amount" );
+				GLint iOld = 0;
+				gl.glGetIntegerv( GL_TEXTURE_BINDING_2D, &iOld );
+				s_gl.GenTextures( 1, &s_texGray );
+				gl.glBindTexture( GL_TEXTURE_2D, s_texGray );
+				gl.glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+				gl.glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+				gl.glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+				gl.glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+				gl.glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, s_iEyeW, s_iEyeH, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL );
+				gl.glBindTexture( GL_TEXTURE_2D, iOld );
+				s_iGrayState = 1;
+			}
+		}
+	}
+	if ( s_iGrayState < 0 )
+		return;
+
+	GLint iTex = 0, iProgram = 0;
+	gl.glGetIntegerv( GL_TEXTURE_BINDING_2D, &iTex );
+	gl.glGetIntegerv( GL_CURRENT_PROGRAM, &iProgram );
+	gl.glMatrixMode( GL_PROJECTION );
+	gl.glPushMatrix();
+	gl.glLoadIdentity();
+	gl.glOrtho( 0, 1, 0, 1, -1, 1 );
+	gl.glMatrixMode( GL_MODELVIEW );
+	gl.glPushMatrix();
+	gl.glLoadIdentity();
+	gl.glPushAttrib( GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_CURRENT_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT );
+	gl.glDisable( GL_DEPTH_TEST );
+	gl.glDepthMask( GL_FALSE );
+	gl.glDisable( GL_ALPHA_TEST );
+	gl.glDisable( GL_CULL_FACE );
+	gl.glDisable( GL_FOG );
+	if ( s_gl.ActiveTexture )
+		s_gl.ActiveTexture( GL_TEXTURE0 );	// glPopAttrib (GL_TEXTURE_BIT) puts the active unit back
+	gl.glEnable( GL_TEXTURE_2D );
+	gl.glEnable( GL_BLEND );
+	gl.glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+	gl.glBindTexture( GL_TEXTURE_2D, s_texGray );
+	rcgl.glUseProgram( s_iGrayProgram );
+	rcgl.glUniform1i( s_iGrayTex, 0 );
+	rcgl.glUniform1f( s_iGrayAmount, amount );
+	for ( int e = 0; e < 2; e++ )
+	{
+		s_gl.BindFramebuffer( GL_FRAMEBUFFER, s_rgFbo[ e ] );
+		gl.glViewport( 0, 0, s_iEyeW, s_iEyeH );
+		gl.glCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, 0, 0, s_iEyeW, s_iEyeH );
+		gl.glBegin( GL_QUADS );
+		gl.glTexCoord2f( 0, 0 ); gl.glVertex3f( 0, 0, 0 );
+		gl.glTexCoord2f( 1, 0 ); gl.glVertex3f( 1, 0, 0 );
+		gl.glTexCoord2f( 1, 1 ); gl.glVertex3f( 1, 1, 0 );
+		gl.glTexCoord2f( 0, 1 ); gl.glVertex3f( 0, 1, 0 );
+		gl.glEnd();
+	}
+	rcgl.glUseProgram( iProgram );
+	gl.glPopAttrib();
+	gl.glBindTexture( GL_TEXTURE_2D, iTex );
+	gl.glMatrixMode( GL_PROJECTION );
+	gl.glPopMatrix();
+	gl.glMatrixMode( GL_MODELVIEW );
+	gl.glPopMatrix();
+}
+
 void RcVR_HudRedrawStart( void )
 {
 	if ( !s_bActive )
@@ -999,6 +1098,7 @@ void RcVR_HudRedrawStart( void )
 		return;
 
 	RcVrFadeLeftEye();
+	RcVrGrayEyes();
 	RcVrUnbindEye();
 
 	// the window holds only the 2D from here: black where nothing is drawn
