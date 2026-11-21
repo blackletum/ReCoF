@@ -1717,6 +1717,22 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 	if ( RcVrPressed( L, vr::k_EButton_ApplicationMenu ) && !RcVrWasPressed( L, vr::k_EButton_ApplicationMenu ) )
 		RcVrKey( VK_ESCAPE );
 
+	// a hit buzzes both hands, longer for more damage
+	static int s_iLastHealth = -1;
+	int iHealth = gHUD.m_Health.m_iHealth;
+	if ( s_iLastHealth > 0 && iHealth < s_iLastHealth && iHealth >= 0 )
+	{
+		int us = ( s_iLastHealth - iHealth ) * 200;
+		if ( us > 3999 ) us = 3999;
+		if ( us < 1000 ) us = 1000;
+		for ( int h = 0; h < 2; h++ )
+		{
+			if ( s_rgHand[ h ].valid )
+				s_pSystem->TriggerHapticPulse( s_rgHand[ h ].index, 0, (unsigned short)us );
+		}
+	}
+	s_iLastHealth = iHealth;
+
 	// the hands with this frame's buttons first (the two-handed hold decides what the left grip does)
 	if ( s_bOwnView )
 		RcVrUpdateBody( s_rgGameEye, s_flTurnYaw, true );
