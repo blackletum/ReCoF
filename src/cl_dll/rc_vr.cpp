@@ -703,13 +703,29 @@ static void RcVrEye( int e, float *origin, float *angles )
 // ------------------------------------------------------------------------------------------------------------
 // the passes (view.cpp V_CalcRefdef)
 
+// the window's client size (gHUD.m_scrinfo is only filled once a level has loaded)
+static void RcVrWindowSize( int &w, int &h )
+{
+	RECT rc;
+	if ( s_hWnd && GetClientRect( s_hWnd, &rc ) && rc.right > rc.left && rc.bottom > rc.top )
+	{
+		w = rc.right - rc.left;
+		h = rc.bottom - rc.top;
+		return;
+	}
+	w = ScreenWidth > 0 ? ScreenWidth : 640;
+	h = ScreenHeight > 0 ? ScreenHeight : 480;
+}
+
 static void RcVrBindEye( int e )
 {
+	int winW, winH;
+	RcVrWindowSize( winW, winH );
 	s_gl.BindFramebuffer( GL_FRAMEBUFFER, s_rgFbo[ e ] );
 	s_bEyeBound = true;
 	gl.glViewport( 0, 0, s_iEyeW, s_iEyeH );
 	if ( s_pfnSetEye )
-		s_pfnSetEye( 1, s_rgTan[ e ][ 0 ], s_rgTan[ e ][ 1 ], s_rgTan[ e ][ 2 ], s_rgTan[ e ][ 3 ], s_iEyeW, s_iEyeH, ScreenWidth, ScreenHeight );
+		s_pfnSetEye( 1, s_rgTan[ e ][ 0 ], s_rgTan[ e ][ 1 ], s_rgTan[ e ][ 2 ], s_rgTan[ e ][ 3 ], s_iEyeW, s_iEyeH, winW, winH );
 }
 
 static void RcVrUnbindEye( void )
@@ -721,7 +737,9 @@ static void RcVrUnbindEye( void )
 		s_gl.BindFramebuffer( GL_FRAMEBUFFER, 0 );
 		s_bEyeBound = false;
 	}
-	gl.glViewport( 0, 0, ScreenWidth, ScreenHeight );
+	int w, h;
+	RcVrWindowSize( w, h );
+	gl.glViewport( 0, 0, w, h );
 }
 
 static void ( *s_pfnPassEnd )( struct ref_params_s * );
@@ -968,7 +986,9 @@ float RcVR_CullFov( void )
 		h = max( h, max( fabsf( s_rgTan[ e ][ 0 ] ), fabsf( s_rgTan[ e ][ 1 ] ) ) );
 		v = max( v, max( fabsf( s_rgTan[ e ][ 2 ] ), fabsf( s_rgTan[ e ][ 3 ] ) ) );
 	}
-	float aspect = ScreenHeight > 0 ? (float)ScreenWidth / ScreenHeight : 1.78f;
+	int winW, winH;
+	RcVrWindowSize( winW, winH );
+	float aspect = (float)winW / winH;
 	float t = max( h, v * aspect ) * 1.1f;
 	float fov = 2 * atanf( t ) * 180 / RCVR_PI;
 	return fov > 170 ? 170 : fov;
@@ -1655,7 +1675,8 @@ static void RcVrDrawOverlays( int e, float screen[ 3 ][ 4 ], float sw, float sh,
 static void RcVrMirror( void )
 {
 	// the left eye to the window, cropped to the window's shape, and the 2D over it
-	int w = ScreenWidth, h = ScreenHeight;
+	int w, h;
+	RcVrWindowSize( w, h );
 	gl.glViewport( 0, 0, w, h );
 	gl.glMatrixMode( GL_PROJECTION );
 	gl.glLoadIdentity();
@@ -1731,7 +1752,8 @@ static void __stdcall RcVrSwap( HDC hDC )
 	gl.glDepthMask( GL_TRUE );
 
 	// the window's 2D into the screen texture
-	int w = ScreenWidth, h = ScreenHeight;
+	int w, h;
+	RcVrWindowSize( w, h );
 	gl.glBindTexture( GL_TEXTURE_2D, s_texScreen );
 	if ( w != s_iScreenW || h != s_iScreenH )
 	{
