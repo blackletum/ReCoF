@@ -1,6 +1,6 @@
 # VR (work in progress)
 
-Cry of Fear in a headset through SteamVR, on the `openvr` branch. It only switches on when the game starts with `-vr` (or `-openvr`): without it client.dll never loads `openvr_api.dll` and every VR hook returns at once, so flat play, its settings in config.cfg and the speedrun tools are unchanged. Nothing has been played in a headset yet; the first tests are with a Meta Quest 3S. The bug rows are B510 to B528 in [bugs.md](bugs.md); the design is in the research report (`I:\COFPP\reports\ReCoF VR version research.md`, local).
+Cry of Fear in a headset through SteamVR, on the `openvr` branch. It only switches on when the game starts with `-vr` (or `-openvr`): without it client.dll never loads `openvr_api.dll` and every VR hook returns at once, so flat play, its settings in config.cfg and the speedrun tools are unchanged. Nothing has been played in a headset yet; the first tests are with a Meta Quest 3S. The bug rows are B510 to B530 in [bugs.md](bugs.md); the design is in the research report (`I:\COFPP\reports\ReCoF VR version research.md`, local).
 
 ## Starting it
 
@@ -35,7 +35,7 @@ Holsters: the right hand at the right hip, the left hip or over the right should
 - Each eye is drawn on its own with the headset's projection, through the engine's own view loop; 4x multisampling; the second eye repeats the first one's picture without running the frame's effects again.
 - The head moves the eyes from where the game puts the player's eye (leaning a little is allowed, walking away from the body is not); a scene's camera turns the world while the head looks round in it.
 - The right hand holds the weapon model: its wrist sits on the controller and the arms are folded away. The left controller has its own hand, drawn from the weapon model's left hand, or the flashlight or lantern. Weapon models without a left hand, and empty hands, use Simon's hands from `v_actions.mdl`.
-- Shots go where the gun points: a red dot marks the spot.
+- Shots leave from the gun in the hand and go where it points (the server takes the gun's position from each command and never fires through a wall between the eye and the hand): a red dot marks the spot. No 2D crosshair or sniper scope overlay in VR.
 - The HUD hangs in front of the head with its dark parts see-through; menus, the inventory, keypads and the console are on a fixed panel, used with a laser from the right hand.
 - The grayscale of the black and white scenes and the screen fades are drawn in both eyes.
 - The near plane is 5 cm, so a gun raised to the eye is not cut.
@@ -54,6 +54,7 @@ Holsters: the right hand at the right hip, the left hip or over the right should
 | `rc_vr_hidearms` | 1 | 0 shows the weapon models' arms |
 | `rc_vr_lefthand`, `rc_vr_lefthand_item` | 1, 1 | The left hand, and the flashlight or lantern in it |
 | `rc_vr_twohand` | 1 | Both hands on the gun with the left grip |
+| `rc_vr_handshots` | 1 | Shots leave from the gun; 0: from the eye, aimed at the point the gun points at |
 | `rc_vr_swing` | 2.2 | Metres a second a swing needs to hit with a melee weapon (0: off) |
 | `rc_vr_holsters`, `rc_vr_hip_drop` | 1, 0.6 | The holsters, and how far under the eyes the hips are, in metres |
 | `rc_vr_physcrouch` | 1 | Crouching for real crouches the player |
@@ -69,7 +70,6 @@ Holsters: the right hand at the right hip, the left hip or over the right should
 
 ## Not done yet
 
-- Shots start at the eye (aimed at the point the gun points at), so cover right in front of the gun does not stop them.
 - The blur and the water's screen copies work on the window, not the eyes.
 - No wrist HUD, no OpenXR backend (OpenVR only, so SteamVR is needed).
 - The game window takes the focus back every 2 s when another window has it, because the engine slows down while it is inactive.
