@@ -5,7 +5,7 @@ Cry of Fear in a headset through SteamVR, on the `openvr` branch. It only switch
 ## Starting it
 
 1. Start Steam, then SteamVR. A Quest connects through Steam Link (free, wireless), Quest Link (cable or Air Link) with SteamVR, or Virtual Desktop in its SteamVR mode. Set the headset to 72 or 90 Hz: the game runs at most 100 frames a second.
-2. In the game folder, double-click `Play ReCoF VR.bat`. If Steam runs as administrator (for example started from an administrator PowerShell), start the .bat from that same shell: a game started without administrator rights cannot reach that Steam and stops with "Failed to initialize authentication interface". Then (windowed 1280 x 720 with `-vr -novid`). `openvr_api.dll` must be next to `cof.exe`.
+2. In the game folder, double-click `Play ReCoF VR.bat` (windowed 1280 x 720 with `-vr -novid`). `openvr_api.dll` must be next to `cof.exe`. If Steam runs as administrator (for example started from an administrator PowerShell), start the .bat from that same shell: a game started without administrator rights cannot reach that Steam and stops with "Failed to initialize authentication interface".
 3. The window on the desktop shows the left eye with the HUD over it. The console goes to `qconsole.log` next to `cof.exe`; its `ReCoF VR:` lines say what the headset reported and what went wrong.
 
 The HUD and the menus have the window's shape in the headset, so a 16:9 window gives a 16:9 screen.
