@@ -1929,13 +1929,25 @@ static void __stdcall RcVrSwap( HDC hDC )
 		}
 
 		s_bPointerOnScreen = s_bCursorMode && RcVrPointer( screen, sw, sh );
-		if ( s_bPointerOnScreen && s_hWnd && GetForegroundWindow() == s_hWnd )
+		if ( s_bPointerOnScreen && s_hWnd )
 		{
 			RECT rc;
 			GetClientRect( s_hWnd, &rc );
 			POINT pt = { (LONG)( s_flPointerU * ( rc.right - rc.left ) ), (LONG)( ( 1 - s_flPointerV ) * ( rc.bottom - rc.top ) ) };
-			ClientToScreen( s_hWnd, &pt );
-			SetCursorPos( pt.x, pt.y );
+
+			// the menus read the position from the window's mouse messages (VGUI1) or from the cursor (VGUI2)
+			static LONG s_iLastX = -1, s_iLastY = -1;
+			if ( pt.x != s_iLastX || pt.y != s_iLastY )
+			{
+				s_iLastX = pt.x;
+				s_iLastY = pt.y;
+				PostMessageA( s_hWnd, WM_MOUSEMOVE, s_bMouseDown ? MK_LBUTTON : 0, MAKELPARAM( pt.x, pt.y ) );
+			}
+			if ( GetForegroundWindow() == s_hWnd )
+			{
+				ClientToScreen( s_hWnd, &pt );
+				SetCursorPos( pt.x, pt.y );
+			}
 		}
 
 		// no level (the main menu, a load): CL_CreateMove does not run, the pointer clicks from here
