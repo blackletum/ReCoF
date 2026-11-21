@@ -365,7 +365,7 @@ bool RcVR_Init( void )
 	rc_vr_grip_up		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_grip_up", "-2", FCVAR_ARCHIVE );
 	rc_vr_hidearms		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_hidearms", "1", FCVAR_ARCHIVE );
 	rc_vr_hud_dist		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_hud_dist", "1.6", FCVAR_ARCHIVE );
-	rc_vr_hud_width		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_hud_width", "1.9", FCVAR_ARCHIVE );
+	rc_vr_hud_width		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_hud_width", "1.5", FCVAR_ARCHIVE );	// about 50 degrees: the HUD's corners stay out of the lenses' blurry edges
 	rc_vr_menu_dist		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_menu_dist", "1.8", FCVAR_ARCHIVE );
 	rc_vr_menu_width	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_menu_width", "2.2", FCVAR_ARCHIVE );
 	rc_vr_movehand		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_movehand", "0", FCVAR_ARCHIVE );
