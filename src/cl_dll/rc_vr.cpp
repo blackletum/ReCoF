@@ -162,6 +162,8 @@ static float		s_rgHeadGame[ 3 ];					// the head centre in the game this frame
 static float		s_flBaseYaw;						// the yaw the tracking space is turned by this frame
 static float		s_rgGameEye[ 3 ];					// where the game puts the eye (before the head offset)
 static bool			s_bOwnView = true;
+static bool			s_bPhysCrouch;						// the player crouches because the head went down
+static float		s_flFeetZ;							// the floor under the player while crouching for real
 static int			s_iWaterLevel;						// the view's water level (2 or more: the head is under)
 static float		s_flCamHmdYaw;						// the head's yaw when a camera began
 static bool			s_bWasCamera;
@@ -208,7 +210,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -358,6 +360,7 @@ bool RcVR_Init( void )
 	rc_vr_swing			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_swing", "2.2", FCVAR_ARCHIVE );
 	rc_vr_holsters		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_holsters", "1", FCVAR_ARCHIVE );
 	rc_vr_hip_drop		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_hip_drop", "0.6", FCVAR_ARCHIVE );
+	rc_vr_physcrouch	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_physcrouch", "1", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -673,11 +676,16 @@ static void RcVrUpdateBody( const float *gameEye, float yaw, bool bOwnView )
 			g[ 1 ] *= lean / len;
 		}
 		if ( g[ 2 ] > 16 ) g[ 2 ] = 16;
-		if ( g[ 2 ] < -40 ) g[ 2 ] = -40;
+		if ( g[ 2 ] < ( s_bPhysCrouch ? -56 : -40 ) ) g[ 2 ] = s_bPhysCrouch ? -56 : -40;
 	}
 
 	for ( int i = 0; i < 3; i++ )
 		s_rgHeadGame[ i ] = gameEye[ i ] + g[ i ];
+	if ( bOwnView && s_bPhysCrouch )
+	{
+		if ( s_rgHeadGame[ 2 ] > s_flFeetZ + 34 ) s_rgHeadGame[ 2 ] = s_flFeetZ + 34;
+		if ( s_rgHeadGame[ 2 ] < s_flFeetZ + 12 ) s_rgHeadGame[ 2 ] = s_flFeetZ + 12;
+	}
 	s_flBaseYaw = yaw;
 
 	RcVrUpdateHand( 0, s_rgHeadGame, head, yaw );
@@ -823,6 +831,16 @@ void RcVR_CalcRefdef( struct ref_params_s *pparams, void ( *pfnGame )( struct re
 			else
 				s_flSmoothZ = z;
 			eye[ 2 ] = z;
+
+			// crouching for real: the eye is a standing one over the floor (the game's ducked eye sits lower than a
+			// real crouch, and its hull changes halfway through the duck), and the head's own drop lowers it
+			if ( s_bPhysCrouch )
+			{
+				float down[ 3 ] = { pparams->simorg[ 0 ], pparams->simorg[ 1 ], pparams->simorg[ 2 ] - 80 };
+				pmtrace_t *tr = gEngfuncs.PM_TraceLine( pparams->simorg, down, PM_TRACELINE_PHYSENTSONLY, 2, -1 );
+				s_flFeetZ = tr->fraction < 1 ? tr->endpos[ 2 ] : pparams->simorg[ 2 ] - 18;
+				eye[ 2 ] = s_flFeetZ + 64;
+			}
 		}
 		else
 			VectorCopy( pparams->vieworg, eye );
@@ -1462,7 +1480,20 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 	RcVrButton( RCVB_INVENTORY, RcVrPressed( L, vr::k_EButton_A ) );
 	bool bStraight = fabsf( R.state.rAxis[ 0 ].x ) < 0.5f;	// not while the stick turns
 	RcVrButton( RCVB_JUMP, bStraight && R.state.rAxis[ 0 ].y > 0.75f );
-	RcVrButton( RCVB_DUCK, bStraight && R.state.rAxis[ 0 ].y < -0.75f );
+
+	// crouching for real crouches the player: the head 20 units (about half a metre) under where it was at the last
+	// recentre, standing again over 12
+	if ( rc_vr_physcrouch->value && RcVrHmdValid() && s_bOwnView )
+	{
+		float drop = ( s_rgRef[ 1 ] - s_rgPoses[ vr::k_unTrackedDeviceIndex_Hmd ].mDeviceToAbsoluteTracking.m[ 1 ][ 3 ] ) * rc_vr_scale->value;
+		if ( !s_bPhysCrouch && drop > 20 )
+			s_bPhysCrouch = true;
+		else if ( s_bPhysCrouch && drop < 12 )
+			s_bPhysCrouch = false;
+	}
+	else
+		s_bPhysCrouch = false;
+	RcVrButton( RCVB_DUCK, ( bStraight && R.state.rAxis[ 0 ].y < -0.75f ) || s_bPhysCrouch );
 
 	// B: the next quick slot
 	if ( RcVrPressed( R, vr::k_EButton_ApplicationMenu ) && !RcVrWasPressed( R, vr::k_EButton_ApplicationMenu ) )
