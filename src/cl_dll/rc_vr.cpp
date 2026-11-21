@@ -1793,6 +1793,11 @@ static void __stdcall RcVrSwap( HDC hDC )
 			RcVrUpdateHand( 0, zero, head, 0 );
 			RcVrUpdateHand( 1, zero, head, 0 );
 		}
+		else if ( !s_bInputThisFrame )
+		{
+			// a level without CL_CreateMove this frame (paused): the hands from this frame's poses
+			RcVrUpdateBody( s_rgGameEye, s_flBaseYaw, s_bOwnView );
+		}
 
 		s_bPointerOnScreen = s_bCursorMode && RcVrPointer( screen, sw, sh );
 		if ( s_bPointerOnScreen && s_hWnd && GetForegroundWindow() == s_hWnd )
