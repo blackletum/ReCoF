@@ -1519,8 +1519,15 @@ static void RcVrPollEvents( void )
 	{
 		if ( ev.eventType == vr::VREvent_Quit )
 		{
-			gEngfuncs.Con_Printf( "ReCoF VR: SteamVR is closing\n" );
+			// SteamVR is closing: the game goes on flat (no call reaches the runtime after this)
+			gEngfuncs.Con_Printf( "ReCoF VR: SteamVR is closing; the game goes on flat\n" );
 			s_pSystem->AcknowledgeQuit_Exiting();
+			RcVrReleaseButtons();
+			RcVrUnbindEye();
+			s_bActive = false;
+			s_bSecondEye = false;
+			s_pfnShutdown();
+			return;
 		}
 	}
 }
@@ -1529,7 +1536,6 @@ static bool s_bInputThisFrame;	// CL_CreateMove read the controllers this frame
 
 static void RcVrReadControllers( void )
 {
-	RcVrPollEvents();
 	for ( int h = 0; h < 2; h++ )
 	{
 		RcVrHand_t &hand = s_rgHand[ h ];
@@ -1597,6 +1603,9 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 	if ( !s_bActive )
 		return;
 
+	RcVrPollEvents();
+	if ( !s_bActive )
+		return;
 	RcVrReadControllers();
 
 	// the hands and the head for this frame's aim (the view updates them again)
@@ -2071,6 +2080,9 @@ static void RcVrMirror( void )
 
 static void __stdcall RcVrSwap( HDC hDC )
 {
+	if ( !s_bActive )
+		return;
+	RcVrPollEvents();
 	if ( !s_bActive )
 		return;
 	if ( !s_hWnd )
