@@ -1511,6 +1511,11 @@ int CBasePlayer :: TakeHealth( float flHealth, int bitsDamageType )
 
 }
 
+// ReCoF VR (B530): a VR player's gun offset from the eye, from his last command (client.cpp CmdStart); the client
+// (cl_dll rc_vr.cpp) sends it in impact_position, which the wheelchair uses with [2] > 0 and VR with [2] < 0
+Vector	g_rgRcVrHand[ 33 ];
+bool	g_rgbRcVrHand[ 33 ];
+
 Vector CBasePlayer :: GetGunPosition( )
 {
 //	UTIL_MakeVectors(pev->v_angle);
@@ -1518,6 +1523,21 @@ Vector CBasePlayer :: GetGunPosition( )
 	Vector origin;
 
 	origin = pev->origin + pev->view_ofs;
+
+	// ReCoF VR (B530): the shots leave from the gun in the hand, at most 48 units from the eye and never through a
+	// wall between the eye and the hand
+	int iRcIndex = entindex();
+	if ( iRcIndex > 0 && iRcIndex <= 32 && g_rgbRcVrHand[ iRcIndex ] && IsAlive() )
+	{
+		Vector vecHand = g_rgRcVrHand[ iRcIndex ];
+		float flLen = vecHand.Length();
+		if ( flLen > 48 )
+			vecHand = vecHand * ( 48 / flLen );
+		TraceResult tr;
+		UTIL_TraceLine( origin, origin + vecHand, ignore_monsters, edict(), &tr );
+		float f = tr.flFraction >= 1.0 ? 1.0 : ( tr.flFraction > 0.1 ? tr.flFraction - 0.1 : 0.0 );
+		origin = origin + vecHand * f;
+	}
 
 	return origin;
 }

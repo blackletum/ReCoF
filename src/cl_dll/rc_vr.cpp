@@ -201,7 +201,9 @@ struct RcVrHand_t
 };
 static RcVrHand_t	s_rgHand[ 2 ];						// 0 left, 1 right
 static float		s_flMotion;							// 0 to 1: how much the stick moves or turns the player (vignette)
-static bool			s_bTwoHand;							// the left hand steadies the gun
+static bool			s_bTwoHand;
+static bool			s_bHandShots;						// the gun's offset went to the server this frame
+static float		s_rgHandOffset[ 3 ];				// the gun (right hand) from the eye, game units							// the left hand steadies the gun
 static float		s_rgAimPoint[ 3 ];					// where the right hand points in the game
 static bool			s_bAimPoint;
 
@@ -228,7 +230,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_msaa, *rc_vr_vignette, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_msaa, *rc_vr_vignette, *rc_vr_handshots, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -382,6 +384,7 @@ bool RcVR_Init( void )
 	rc_vr_twohand		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_twohand", "1", FCVAR_ARCHIVE );
 	rc_vr_msaa			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_msaa", "4", FCVAR_ARCHIVE );
 	rc_vr_vignette		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_vignette", "0", FCVAR_ARCHIVE );
+	rc_vr_handshots		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_handshots", "1", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -1374,6 +1377,16 @@ void RcVR_CreateEntities( void )
 		s_bLeftHand = bWeaponHands;	// the weapon's own left hand folds away only when the copy is of the weapon
 }
 
+bool RcVR_HandOffset( float *off )
+{
+	if ( !s_bActive || !s_bHandShots )
+		return false;
+	off[ 0 ] = s_rgHandOffset[ 0 ];
+	off[ 1 ] = s_rgHandOffset[ 1 ];
+	off[ 2 ] = s_rgHandOffset[ 2 ];
+	return true;
+}
+
 bool RcVR_NoEvents( struct cl_entity_s *ent )
 {
 	return s_bSecondEye || ( s_bActive && ( ent == &s_HandEnt || ent == &s_RHandEnt ) );
@@ -1842,9 +1855,10 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 		s_bAimPoint = tr->fraction < 1;
 		float d[ 3 ] = { hit[ 0 ] - s_rgGameEye[ 0 ], hit[ 1 ] - s_rgGameEye[ 1 ], hit[ 2 ] - s_rgGameEye[ 2 ] };
 		float len = sqrtf( d[ 0 ] * d[ 0 ] + d[ 1 ] * d[ 1 ] + d[ 2 ] * d[ 2 ] );
-		if ( len < 32 )
+		if ( len < 32 || rc_vr_handshots->value )
 		{
-			// too close to converge: the hand's own direction
+			// the shots leave from the hand (B530), or the point is too close to aim at from the eye: the hand's
+			// own direction
 			d[ 0 ] = R.fwd[ 0 ]; d[ 1 ] = R.fwd[ 1 ]; d[ 2 ] = R.fwd[ 2 ];
 		}
 		float xy = sqrtf( d[ 0 ] * d[ 0 ] + d[ 1 ] * d[ 1 ] );
@@ -1891,8 +1905,29 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 	if ( !bAim )
 	{
 		s_bAnglesSet = false;
+		s_bHandShots = false;
 		return;
 	}
+
+	// B530: the gun's offset from the eye goes to the server in the command (impact_position[0] and [1], and
+	// [2] as -( z + 100 ): negative, where the wheelchair's flag is positive); hl.dll's GetGunPosition fires from it
+	s_bHandShots = false;
+	if ( rc_vr_handshots->value && R.valid && s_bOwnView && !bHeadAim )
+	{
+		float off[ 3 ] = { R.pos[ 0 ] - s_rgGameEye[ 0 ], R.pos[ 1 ] - s_rgGameEye[ 1 ], R.pos[ 2 ] - s_rgGameEye[ 2 ] };
+		float len = sqrtf( off[ 0 ] * off[ 0 ] + off[ 1 ] * off[ 1 ] + off[ 2 ] * off[ 2 ] );
+		if ( len > 48 )
+		{
+			for ( int i = 0; i < 3; i++ )
+				off[ i ] *= 48 / len;
+		}
+		cmd->impact_position[ 0 ] = off[ 0 ];
+		cmd->impact_position[ 1 ] = off[ 1 ];
+		cmd->impact_position[ 2 ] = -( off[ 2 ] + 100 );
+		memcpy( s_rgHandOffset, off, sizeof( off ) );
+		s_bHandShots = true;
+	}
+
 	gEngfuncs.SetViewAngles( aim );
 	VectorCopy( aim, cmd->viewangles );
 	VectorCopy( aim, s_rgLastSetAngles );

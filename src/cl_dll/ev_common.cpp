@@ -24,6 +24,7 @@
 #include "eventscripts.h"
 #include "event_api.h"
 #include "pm_shared.h"
+#include "rc_vr.h"	// ReCoF VR
 
 #define IS_FIRSTPERSON_SPEC ( g_iUser1 == OBS_IN_EYE || (g_iUser1 && (gHUD.m_Spectator.m_pip->value == INSET_IN_EYE)) )
 /*
@@ -125,6 +126,11 @@ void EV_GetGunPosition( event_args_t *args, float *pos, float *origin )
 	}
 
 	VectorAdd( origin, view_ofs, pos );
+
+	// ReCoF VR (B530): the local player's shots leave from the gun in the hand, as on the server (rc_vr.cpp)
+	float rgHand[ 3 ];
+	if ( EV_IsLocal( idx ) && RcVR_HandOffset( rgHand ) )
+		VectorAdd( pos, rgHand, pos );
 }
 
 /*

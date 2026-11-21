@@ -3887,6 +3887,19 @@ void CmdStart( const edict_t *player, const struct usercmd_s *cmd, unsigned int 
 
 	pl->m_iNew16a_guess = cmd->is_donator;
 
+	// ReCoF VR (B530): a VR client sends its gun's offset from the eye (player.cpp GetGunPosition)
+	{
+		extern Vector g_rgRcVrHand[ 33 ];
+		extern bool g_rgbRcVrHand[ 33 ];
+		int iRcIndex = pl->entindex();
+		if ( iRcIndex > 0 && iRcIndex <= 32 )
+		{
+			g_rgbRcVrHand[ iRcIndex ] = cmd->impact_position[ 2 ] < -1;
+			if ( g_rgbRcVrHand[ iRcIndex ] )
+				g_rgRcVrHand[ iRcIndex ] = Vector( cmd->impact_position[ 0 ], cmd->impact_position[ 1 ], -cmd->impact_position[ 2 ] - 100 );
+		}
+	}
+
 	if ( cmd->viewangles[2] > 0 )
 		pl->m_iUsingMic = 1;
 	else

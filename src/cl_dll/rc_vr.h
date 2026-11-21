@@ -43,6 +43,9 @@ float	RcVR_CullViewsize( void );
 // entity.cpp HUD_CreateEntities: the left hand on the left controller
 void	RcVR_CreateEntities( void );
 
+// ev_common.cpp EV_GetGunPosition: the gun's offset from the eye this frame, when the shots leave from the hand
+bool	RcVR_HandOffset( float *off );
+
 // GameStudioModelRenderer.cpp: a model drawn without its events (the second eye, the left hand)
 bool	RcVR_NoEvents( struct cl_entity_s *ent );
 
