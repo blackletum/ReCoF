@@ -922,6 +922,37 @@ static void RcVrPlaceViewModel( void )
 	}
 }
 
+// B534: GameUI (the game menu, its dialogs, the console) has the input. The engine then skips HUD_Redraw
+// (cdll_int.c ClientDLL_HudRedraw), where the eyes give way to the window, and the menu would be drawn into the
+// eye. GameUI.dll's own interface says it, as it tells the engine (vgui_intwrap2.cpp VGuiWrap2_IsGameUIVisible).
+class IRcVrGameUI
+{
+public:
+	virtual void	Destructor_( void ) = 0;	// IBaseInterface's virtual destructor
+	virtual void	Initialize( void *factories, int count ) = 0;
+	virtual void	Start( void *engineFuncs, int interfaceVersion, void *system ) = 0;
+	virtual void	Shutdown( void ) = 0;
+	virtual int		ActivateGameUI( void ) = 0;
+	virtual int		ActivateDemoUI( void ) = 0;
+	virtual int		HasExclusiveInput( void ) = 0;
+};
+
+static bool RcVrGameUIVisible( void )
+{
+	static IRcVrGameUI *s_pGameUI;
+	if ( !s_pGameUI )
+	{
+		typedef void *( *RcCreateInterface_t )( const char *name, int *ret );
+		HMODULE h = GetModuleHandleA( "GameUI.dll" );
+		RcCreateInterface_t fn = h ? (RcCreateInterface_t)GetProcAddress( h, "CreateInterface" ) : NULL;
+		if ( fn )
+			s_pGameUI = (IRcVrGameUI *)fn( "GameUI007", NULL );
+		if ( !s_pGameUI )
+			return false;
+	}
+	return s_pGameUI->HasExclusiveInput() != 0;
+}
+
 void RcVR_CalcRefdef( struct ref_params_s *pparams, void ( *pfnGame )( struct ref_params_s * ), int ( *pfnOwnView )( struct ref_params_s * ),
 	void ( *pfnPassEnd )( struct ref_params_s * ) )
 {
@@ -929,9 +960,10 @@ void RcVR_CalcRefdef( struct ref_params_s *pparams, void ( *pfnGame )( struct re
 	if ( !pparams->nextView )
 		s_iPass = 0;
 
-	if ( !RcVrMakeGL() || !RcVrHmdValid() )
+	// no headset picture yet, or the game menu open (B534): the flat view, once, into the window, which the
+	// headset shows on the menu panel with the menu over it
+	if ( !RcVrMakeGL() || !RcVrHmdValid() || ( !pparams->nextView && RcVrGameUIVisible() ) )
 	{
-		// no headset picture yet: the flat view, once
 		s_bSecondEye = false;
 		pparams->nextView = 0;
 		pfnGame( pparams );
