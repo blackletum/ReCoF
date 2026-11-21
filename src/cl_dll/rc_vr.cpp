@@ -798,6 +798,7 @@ void RcVR_CalcRefdef( struct ref_params_s *pparams, void ( *pfnGame )( struct re
 		s_bSecondEye = false;
 		pparams->nextView = 0;
 		pparams->onlyClientDraw = 0;
+		pparams->hardware = 2;	// hw.dll V_RenderView (B517): no particle time after this view until the loop ends
 		pfnGame( pparams );	// V_CalcNormalRefdef and the rest; sets nextView 1 if Cry of Fear wants a head shield pass
 		s_bShield = pparams->nextView != 0;
 		s_bOwnView = pfnOwnView( pparams ) != 0;

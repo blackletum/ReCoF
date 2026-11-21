@@ -338,6 +338,7 @@ void V_RenderView( void )
 	ref_params_t	rp;
 	cl_entity_t		*view;
 	int				viewnum;
+	double			rc_flOldTime;	// ReCoF VR (B517)
 
 	viewnum = 0;
 
@@ -363,6 +364,11 @@ void V_RenderView( void )
 	view->index = cl.playernum + 1;
 
 	V_SetRefParams( &rp );
+
+	// ReCoF VR (B517): client.dll's VR mode (rc_vr.cpp) draws each eye as a view of this loop and sets rp.hardware
+	// to 2; R_DrawParticles and the other draws that move things by cl.time - cl.oldtime would move them once a
+	// view, so after the first view no time passes for them until the loop ends
+	rc_flOldTime = cl.oldtime;
 
 	do
 	{
@@ -451,8 +457,13 @@ void V_RenderView( void )
 			VectorCopy( rp.viewangles, r_playerViewportAngles );
 		}
 
+		if ( rp.hardware == 2 )
+			cl.oldtime = cl.time;	// ReCoF VR (B517)
+
 		viewnum++;
 	} while ( rp.nextView );
+
+	cl.oldtime = rc_flOldTime;	// ReCoF VR (B517)
 
 	AdsRenderView_guess( cl.worldmodel, &rp, rp.viewangles );
 
