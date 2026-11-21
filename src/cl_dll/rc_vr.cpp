@@ -434,7 +434,11 @@ bool RcVR_Init( void )
 	pfnHook( RcVrSwap );
 
 	// the headset paces the frames: smooth frames and the weapon model's own field of view stand aside in code
-	// (rc_smooth.cpp, rc_client.cpp), so the player's flat settings in config.cfg stay as they are
+	// (rc_smooth.cpp, rc_client.cpp), so the player's flat settings in config.cfg stay as they are. gl_ztrick
+	// (not saved) would alternate the depth range at every R_Clear, and with two eyes a frame each eye would
+	// always get the same half without a depth clear
+	if ( gEngfuncs.pfnGetCvarPointer( "gl_ztrick" ) )
+		gEngfuncs.Cvar_SetValue( (char *)"gl_ztrick", 0 );
 
 	s_bActive = true;
 	gEngfuncs.Con_Printf( "ReCoF VR: on, %s %s, eyes %u x %u, left eye tangents %.2f %.2f %.2f %.2f, IPD %.1f mm\n", szSystem, szModel, s_iEyeW, s_iEyeH,
@@ -1815,8 +1819,9 @@ static void __stdcall RcVrSwap( HDC hDC )
 		{
 			vr::Texture_t tex = { (void *)(uintptr_t)s_rgEyeTex[ e ], vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
 			vr::EVRCompositorError err = s_pComp->Submit( e ? vr::Eye_Right : vr::Eye_Left, &tex );
-			if ( err != vr::VRCompositorError_None && rc_vr_debug->value )
-				gEngfuncs.Con_Printf( "ReCoF VR: submit %d failed (%d)\n", e, (int)err );
+			static int s_iSubmitErrors;
+			if ( err != vr::VRCompositorError_None && ( s_iSubmitErrors++ < 3 || rc_vr_debug->value ) )
+				gEngfuncs.Con_Printf( "ReCoF VR: submitting eye %d failed (compositor error %d)\n", e, (int)err );
 		}
 	}
 
