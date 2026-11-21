@@ -87,8 +87,9 @@ int R_StudioDrawModel( int flags )
 	if ( IEngineStudio.GetCurrentEntity() && IEngineStudio.GetCurrentEntity()->curstate.movetype == MOVETYPE_STEP )
 		RcProf_Count( RCC_MONSTERS );	// ReCoF (B337)
 
-	// ReCoF VR: the second eye draws what the first eye drew; its events (sounds, muzzle flashes, shells) fired there
-	if ( RcVR_SecondEye() )
+	// ReCoF VR: the second eye draws what the first eye drew, its events (sounds, muzzle flashes, shells) fired
+	// there; the left hand is a copy of the weapon model, whose events are the weapon's
+	if ( RcVR_NoEvents( IEngineStudio.GetCurrentEntity() ) )
 		flags &= ~STUDIO_EVENTS;
 
 	if (IEngineStudio.GetCurrentEntity() != IEngineStudio.GetViewEntity() && IEngineStudio.GetCurrentEntity()->curstate.renderfx != 161)

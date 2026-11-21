@@ -40,6 +40,12 @@ float	RcVR_CullFov( void );
 // gl_renderer.cpp PrepareRenderer: the client renderer's frustum (viewsize argument)
 float	RcVR_CullViewsize( void );
 
+// entity.cpp HUD_CreateEntities: the left hand on the left controller
+void	RcVR_CreateEntities( void );
+
+// GameStudioModelRenderer.cpp: a model drawn without its events (the second eye, the left hand)
+bool	RcVR_NoEvents( struct cl_entity_s *ent );
+
 // StudioModelRenderer.cpp, after a model's bones are set up: the weapon model's wrist goes to the controller
 void	RcVR_AdjustBones( struct cl_entity_s *ent, void *pStudioHeader, float ( *bonetransform )[ 128 ][ 3 ][ 4 ], float ( *lighttransform )[ 128 ][ 3 ][ 4 ] );
 

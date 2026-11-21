@@ -26,6 +26,7 @@
 #include "particlemgr.h"
 #include "rc_prof.h"	// ReCoF
 #include "rc_bones.h"	// ReCoF (B339)
+#include "rc_vr.h"	// ReCoF VR
 
 #define DLLEXPORT __declspec( dllexport )
 
@@ -613,6 +614,8 @@ cl_entity_t testent;
 void DLLEXPORT HUD_CreateEntities( void )
 {
 	RcProfScope prof( RCP_ENTS );	// ReCoF
+
+	RcVR_CreateEntities();	// ReCoF VR: the left hand on the left controller (rc_vr.cpp)
 
 	// e.g., create a persistent cl_entity_t somewhere.
 	// Load an appropriate model into it ( gEngfuncs.CL_LoadModel )

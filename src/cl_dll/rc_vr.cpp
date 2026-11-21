@@ -27,6 +27,8 @@
 #include "usercmd.h"
 #include "com_model.h"
 #include "studio.h"
+#include "entity_types.h"
+#include "r_studioint.h"
 #include "screenfade.h"
 #include "shake.h"
 #include "rc_client.h"
@@ -204,7 +206,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -350,6 +352,7 @@ bool RcVR_Init( void )
 	rc_vr_renderscale	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_renderscale", "1", FCVAR_ARCHIVE );
 	rc_vr_mirror		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_mirror", "1", FCVAR_ARCHIVE );
 	rc_vr_lefthand_item	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_lefthand_item", "1", FCVAR_ARCHIVE );
+	rc_vr_lefthand		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_lefthand", "1", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -1021,14 +1024,85 @@ static bool RcVrArmBone( const char *name, bool &bLeft )
 	return false;
 }
 
+// the left hand: a copy of the weapon model whose left hand is on the left controller and everything else
+// folded into it; the weapon model's own left hand is folded away then (one gun hand, one free hand)
+extern engine_studio_api_t IEngineStudio;
+static cl_entity_t	s_HandEnt;
+static bool			s_bLeftHand;
+
+void RcVR_CreateEntities( void )
+{
+	s_bLeftHand = false;
+	if ( !s_bActive || !s_bOwnView || !rc_vr_lefthand->value || !s_rgHand[ 0 ].valid || !RcVrHmdValid() )
+		return;
+	if ( g_iHeadShieldType_guess == 3 && rc_vr_lefthand_item->value )
+		return;	// the left hand holds its flashlight or lantern
+
+	cl_entity_t *view = gEngfuncs.GetViewModel();
+	if ( !view || !view->model || view->model->type != mod_studio )
+		return;
+	studiohdr_t *hdr = (studiohdr_t *)IEngineStudio.Mod_Extradata( view->model );
+	if ( !hdr || RcVrBone( hdr, "l_wr", "l_wrist" ) < 0 || RcVrBone( hdr, "r_wr", "r_wrist" ) < 0 )
+		return;
+
+	s_HandEnt = *view;
+	s_HandEnt.index = 0;
+	s_HandEnt.player = 0;
+	s_HandEnt.curstate.rendermode = kRenderNormal;
+	s_HandEnt.curstate.renderfx = kRenderFxNone;
+	s_HandEnt.curstate.renderamt = 255;
+	s_HandEnt.curstate.movetype = MOVETYPE_NONE;
+	VectorCopy( s_rgHand[ 0 ].pos, s_HandEnt.origin );
+	VectorCopy( s_rgHand[ 0 ].pos, s_HandEnt.curstate.origin );
+	VectorCopy( s_rgHand[ 0 ].angles, s_HandEnt.angles );
+	VectorCopy( s_rgHand[ 0 ].angles, s_HandEnt.curstate.angles );
+	if ( gEngfuncs.CL_CreateVisibleEntity( ET_NORMAL, &s_HandEnt ) )
+		s_bLeftHand = true;
+}
+
+bool RcVR_NoEvents( struct cl_entity_s *ent )
+{
+	return s_bSecondEye || ( s_bActive && ent == &s_HandEnt );
+}
+
+// every bone whose name does (bLeft) or does not start with l_ folded into the point p
+static void RcVrFold( studiohdr_t *hdr, float ( *bonetransform )[ 128 ][ 3 ][ 4 ], float ( *lighttransform )[ 128 ][ 3 ][ 4 ], bool bLeft, const float *p )
+{
+	mstudiobone_t *bones = (mstudiobone_t *)( (byte *)hdr + hdr->boneindex );
+	for ( int b = 0; b < hdr->numbones; b++ )
+	{
+		bool bIsLeft = !_strnicmp( bones[ b ].name, "l_", 2 );
+		if ( bIsLeft != bLeft )
+			continue;
+		for ( int i = 0; i < 3; i++ )
+		{
+			for ( int j = 0; j < 3; j++ )
+			{
+				( *bonetransform )[ b ][ i ][ j ] = 0;
+				if ( lighttransform )
+					( *lighttransform )[ b ][ i ][ j ] = 0;
+			}
+			( *bonetransform )[ b ][ i ][ 3 ] = p[ i ];
+			if ( lighttransform )
+				( *lighttransform )[ b ][ i ][ 3 ] = p[ i ];
+		}
+	}
+}
+
 void RcVR_AdjustBones( struct cl_entity_s *ent, void *pStudioHeader, float ( *bonetransform )[ 128 ][ 3 ][ 4 ], float ( *lighttransform )[ 128 ][ 3 ][ 4 ] )
 {
 	if ( !s_bActive || !s_bOwnView || !pStudioHeader || !bonetransform )
 		return;
 
 	int hand;
+	bool bHandEnt = false;
 	if ( ent == gEngfuncs.GetViewModel() )
 		hand = 1;
+	else if ( ent == &s_HandEnt )
+	{
+		hand = 0;
+		bHandEnt = true;
+	}
 	else if ( ent == &g_HeadShieldEnt && g_iHeadShieldType_guess == 3 && rc_vr_lefthand_item->value )
 		hand = 0;
 	else
@@ -1055,6 +1129,45 @@ void RcVR_AdjustBones( struct cl_entity_s *ent, void *pStudioHeader, float ( *bo
 					( *lighttransform )[ b ][ i ][ 3 ] += d[ i ];
 			}
 		}
+	}
+
+	if ( bHandEnt )
+	{
+		// only the left hand: the weapon, the right hand and the arms folded into the left wrist
+		if ( iWrist < 0 )
+			return;
+		float p[ 3 ] = { ( *bonetransform )[ iWrist ][ 0 ][ 3 ], ( *bonetransform )[ iWrist ][ 1 ][ 3 ], ( *bonetransform )[ iWrist ][ 2 ][ 3 ] };
+		RcVrFold( hdr, bonetransform, lighttransform, false, p );
+		static const char *rgArm[] = { "l_up", "l_upp", "l_low", "l_dum", "l_dummy", "l_slv", NULL };
+		mstudiobone_t *bones = (mstudiobone_t *)( (byte *)hdr + hdr->boneindex );
+		for ( int b = 0; b < hdr->numbones; b++ )
+		{
+			for ( int k = 0; rgArm[ k ]; k++ )
+			{
+				if ( _stricmp( bones[ b ].name, rgArm[ k ] ) )
+					continue;
+				for ( int i = 0; i < 3; i++ )
+				{
+					for ( int j = 0; j < 3; j++ )
+					{
+						( *bonetransform )[ b ][ i ][ j ] = 0;
+						if ( lighttransform )
+							( *lighttransform )[ b ][ i ][ j ] = 0;
+					}
+					( *bonetransform )[ b ][ i ][ 3 ] = p[ i ];
+					if ( lighttransform )
+						( *lighttransform )[ b ][ i ][ 3 ] = p[ i ];
+				}
+			}
+		}
+		return;
+	}
+
+	if ( hand == 1 && s_bLeftHand && iWrist >= 0 )
+	{
+		// the left controller has its own hand: the weapon model's left hand folded away
+		float p[ 3 ] = { ( *bonetransform )[ iWrist ][ 0 ][ 3 ], ( *bonetransform )[ iWrist ][ 1 ][ 3 ], ( *bonetransform )[ iWrist ][ 2 ][ 3 ] };
+		RcVrFold( hdr, bonetransform, lighttransform, true, p );
 	}
 
 	if ( !rc_vr_hidearms->value )
