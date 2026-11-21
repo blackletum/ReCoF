@@ -597,8 +597,8 @@ int CHud :: Redraw( float flTime, int intermission )
 		SPR_DrawAdditive(i, x, y, NULL);
 	}
 
-	// buz: draw crosshair
-	if ((g_vSpread[0] && g_iGunMode != 3 && m_SpecTank_on == 0) && gHUD.m_pCvarDraw->value) // Wargon: Прицел рисуется только если hud_draw = 1.
+	// buz: draw crosshair (ReCoF VR: not in a headset, where the screen moves with the head; the aim dot shows the shot)
+	if ((g_vSpread[0] && g_iGunMode != 3 && m_SpecTank_on == 0) && gHUD.m_pCvarDraw->value && !RcVR_Active()) // Wargon: Прицел рисуется только если hud_draw = 1.
 	{
 		if (gViewPort && gViewPort->m_pParanoiaText && gViewPort->m_pParanoiaText->isVisible())
 			return 1;
