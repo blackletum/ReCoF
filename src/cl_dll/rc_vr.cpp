@@ -35,6 +35,7 @@
 #include "rc_glsl.h"
 #include "log.h"
 #include "rc_vr.h"
+#include "ammo.h"
 
 #include <windows.h>
 #include <math.h>
@@ -206,7 +207,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -353,6 +354,7 @@ bool RcVR_Init( void )
 	rc_vr_mirror		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_mirror", "1", FCVAR_ARCHIVE );
 	rc_vr_lefthand_item	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_lefthand_item", "1", FCVAR_ARCHIVE );
 	rc_vr_lefthand		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_lefthand", "1", FCVAR_ARCHIVE );
+	rc_vr_swing			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_swing", "2.2", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -1368,8 +1370,34 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 	if ( RcVrPressed( L, vr::k_EButton_ApplicationMenu ) && !RcVrWasPressed( L, vr::k_EButton_ApplicationMenu ) )
 		RcVrKey( VK_ESCAPE );
 
+	// melee weapons: a swing of the right hand faster than rc_vr_swing metres a second attacks (the server's trace
+	// goes where the hand points); the trigger still works
+	static float s_flSwingUntil, s_flSwingNext;
+	float now = gEngfuncs.GetClientTime();
+	bool bSwing = false;
+	if ( rc_vr_swing->value > 0 && R.valid && R.index < vr::k_unMaxTrackedDeviceCount && gHUD.m_Ammo.m_pWeapon )
+	{
+		static const char *rgMelee[] = { "switchblade", "nightstick", "sledgehammer", "axe", "branch", "pickaxe", "shovel", "hammer", "knife", NULL };
+		const char *pszWeapon = gHUD.m_Ammo.m_pWeapon->szName;
+		bool bMelee = false;
+		for ( int i = 0; rgMelee[ i ] && !bMelee; i++ )
+			bMelee = strstr( pszWeapon, rgMelee[ i ] ) != NULL;
+		const vr::HmdVector3_t &v = s_rgPoses[ R.index ].vVelocity;
+		float speed = sqrtf( v.v[ 0 ] * v.v[ 0 ] + v.v[ 1 ] * v.v[ 1 ] + v.v[ 2 ] * v.v[ 2 ] );
+		if ( bMelee && speed > rc_vr_swing->value && ( now >= s_flSwingNext || now < s_flSwingNext - 5 ) )
+		{
+			s_flSwingUntil = now + 0.12f;
+			s_flSwingNext = now + 0.45f;
+			s_pSystem->TriggerHapticPulse( R.index, 0, 3000 );
+		}
+		bSwing = now < s_flSwingUntil;
+	}
+
 	// buttons
-	RcVrButton( RCVB_ATTACK, R.state.rAxis[ 1 ].x > 0.6f );
+	bool bFire = R.state.rAxis[ 1 ].x > 0.6f;
+	if ( bFire && !s_rgButtonDown[ RCVB_ATTACK ] && R.valid )
+		s_pSystem->TriggerHapticPulse( R.index, 0, 2000 );
+	RcVrButton( RCVB_ATTACK, bFire || bSwing );
 	RcVrButton( RCVB_ATTACK2, L.state.rAxis[ 1 ].x > 0.6f );
 	RcVrButton( RCVB_USE, RcVrPressed( R, vr::k_EButton_Grip ) );
 	RcVrButton( RCVB_RELOAD, RcVrPressed( R, vr::k_EButton_A ) );
@@ -1851,6 +1879,22 @@ static void __stdcall RcVrSwap( HDC hDC )
 	gl.glBindTexture( GL_TEXTURE_2D, iTex );
 	if ( s_gl.ActiveTexture )
 		s_gl.ActiveTexture( iActive );
+
+	if ( rc_vr_debug->value )
+	{
+		static int s_iFrames;
+		static float s_flNext;
+		float now = gEngfuncs.GetClientTime();
+		s_iFrames++;
+		if ( now >= s_flNext || now < s_flNext - 2 )
+		{
+			gEngfuncs.Con_Printf( "ReCoF VR: %d pictures/s, %s, hands %s %s, %s%s, turn %.0f\n", s_iFrames, bWorld ? "level" : "no level",
+				s_rgHand[ 0 ].valid ? "L" : "-", s_rgHand[ 1 ].valid ? "R" : "-", s_bCursorMode ? "pointer" : "game",
+				s_bPointerOnScreen ? " on screen" : "", s_flTurnYaw );
+			s_iFrames = 0;
+			s_flNext = now + 1;
+		}
+	}
 
 	s_bEyesDrawn = false;
 	s_bInputThisFrame = false;
