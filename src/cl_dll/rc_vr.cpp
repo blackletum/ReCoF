@@ -1300,42 +1300,81 @@ static bool RcVrArmBone( const char *name, bool &bLeft )
 // the left hand: a copy of the weapon model whose left hand is on the left controller and everything else
 // folded into it; the weapon model's own left hand is folded away then (one gun hand, one free hand)
 extern engine_studio_api_t IEngineStudio;
-static cl_entity_t	s_HandEnt;
+static cl_entity_t	s_HandEnt;		// the left hand
+static cl_entity_t	s_RHandEnt;		// the right hand when no weapon model has one
 static bool			s_bLeftHand;
+static struct model_s	*s_pActions;	// models/weapons/v_actions.mdl: both hands, empty (emptyidle)
+static int			s_iActions;
+
+static bool RcVrHasWrists( struct model_s *mod )
+{
+	if ( !mod || mod->type != mod_studio )
+		return false;
+	studiohdr_t *hdr = (studiohdr_t *)IEngineStudio.Mod_Extradata( mod );
+	return hdr && RcVrBone( hdr, "l_wr", "l_wrist" ) >= 0 && RcVrBone( hdr, "r_wr", "r_wrist" ) >= 0;
+}
+
+// a hand entity at a controller: a copy of the weapon model, or the empty hands' model held still
+static bool RcVrHandEntity( cl_entity_t &ent, int h, cl_entity_t *view, bool bWeapon )
+{
+	if ( bWeapon )
+		ent = *view;
+	else
+	{
+		if ( !s_pActions )
+			s_pActions = gEngfuncs.CL_LoadModel( "models/weapons/v_actions.mdl", &s_iActions );
+		if ( !s_pActions || !RcVrHasWrists( s_pActions ) )
+			return false;
+		memset( &ent, 0, sizeof( ent ) );
+		ent.model = s_pActions;
+		ent.curstate.modelindex = s_iActions;
+		ent.curstate.sequence = 0;	// emptyidle
+		ent.curstate.frame = 0;
+		ent.curstate.framerate = 0;
+		ent.curstate.scale = 1;
+	}
+	ent.index = 0;
+	ent.player = 0;
+	ent.curstate.rendermode = kRenderNormal;
+	ent.curstate.renderfx = kRenderFxNone;
+	ent.curstate.renderamt = 255;
+	ent.curstate.movetype = MOVETYPE_NONE;
+	VectorCopy( s_rgHand[ h ].pos, ent.origin );
+	VectorCopy( s_rgHand[ h ].pos, ent.curstate.origin );
+	VectorCopy( s_rgHand[ h ].angles, ent.angles );
+	VectorCopy( s_rgHand[ h ].angles, ent.curstate.angles );
+	return gEngfuncs.CL_CreateVisibleEntity( ET_NORMAL, &ent ) != 0;
+}
 
 void RcVR_CreateEntities( void )
 {
 	s_bLeftHand = false;
-	if ( !s_bActive || !s_bOwnView || !rc_vr_lefthand->value || !s_rgHand[ 0 ].valid || !RcVrHmdValid() )
+	s_RHandEnt.model = NULL;
+	if ( !s_bActive || !s_bOwnView || !RcVrHmdValid() )
+		return;
+
+	cl_entity_t *view = gEngfuncs.GetViewModel();
+	bool bWeaponHands = view && RcVrHasWrists( view->model );
+	bool bNoWeapon = !view || !view->model;
+
+	// the right hand with nothing in it
+	if ( bNoWeapon && s_rgHand[ 1 ].valid && rc_vr_lefthand->value )
+	{
+		if ( !RcVrHandEntity( s_RHandEnt, 1, view, false ) )
+			s_RHandEnt.model = NULL;
+	}
+
+	if ( !rc_vr_lefthand->value || !s_rgHand[ 0 ].valid )
 		return;
 	if ( g_iHeadShieldType_guess == 3 && rc_vr_lefthand_item->value )
 		return;	// the left hand holds its flashlight or lantern
-
-	cl_entity_t *view = gEngfuncs.GetViewModel();
-	if ( !view || !view->model || view->model->type != mod_studio )
-		return;
-	studiohdr_t *hdr = (studiohdr_t *)IEngineStudio.Mod_Extradata( view->model );
-	if ( !hdr || RcVrBone( hdr, "l_wr", "l_wrist" ) < 0 || RcVrBone( hdr, "r_wr", "r_wrist" ) < 0 )
-		return;
-
-	s_HandEnt = *view;
-	s_HandEnt.index = 0;
-	s_HandEnt.player = 0;
-	s_HandEnt.curstate.rendermode = kRenderNormal;
-	s_HandEnt.curstate.renderfx = kRenderFxNone;
-	s_HandEnt.curstate.renderamt = 255;
-	s_HandEnt.curstate.movetype = MOVETYPE_NONE;
-	VectorCopy( s_rgHand[ 0 ].pos, s_HandEnt.origin );
-	VectorCopy( s_rgHand[ 0 ].pos, s_HandEnt.curstate.origin );
-	VectorCopy( s_rgHand[ 0 ].angles, s_HandEnt.angles );
-	VectorCopy( s_rgHand[ 0 ].angles, s_HandEnt.curstate.angles );
-	if ( gEngfuncs.CL_CreateVisibleEntity( ET_NORMAL, &s_HandEnt ) )
-		s_bLeftHand = true;
+	if ( RcVrHandEntity( s_HandEnt, 0, view, bWeaponHands ) )
+		s_bLeftHand = bWeaponHands;	// the weapon's own left hand folds away only when the copy is of the weapon
 }
 
 bool RcVR_NoEvents( struct cl_entity_s *ent )
 {
-	return s_bSecondEye || ( s_bActive && ent == &s_HandEnt );
+	return s_bSecondEye || ( s_bActive && ( ent == &s_HandEnt || ent == &s_RHandEnt ) );
 }
 
 // every bone whose name does (bLeft) or does not start with l_ folded into the point p
@@ -1368,9 +1407,14 @@ void RcVR_AdjustBones( struct cl_entity_s *ent, void *pStudioHeader, float ( *bo
 		return;
 
 	int hand;
-	bool bHandEnt = false;
+	bool bHandEnt = false, bRightOnly = false;
 	if ( ent == gEngfuncs.GetViewModel() )
 		hand = 1;
+	else if ( ent == &s_RHandEnt )
+	{
+		hand = 1;
+		bRightOnly = true;
+	}
 	else if ( ent == &s_HandEnt )
 	{
 		hand = 0;
@@ -1436,7 +1480,7 @@ void RcVR_AdjustBones( struct cl_entity_s *ent, void *pStudioHeader, float ( *bo
 		return;
 	}
 
-	if ( hand == 1 && s_bLeftHand && iWrist >= 0 )
+	if ( hand == 1 && ( s_bLeftHand || bRightOnly ) && iWrist >= 0 )
 	{
 		// the left controller has its own hand: the weapon model's left hand folded away
 		float p[ 3 ] = { ( *bonetransform )[ iWrist ][ 0 ][ 3 ], ( *bonetransform )[ iWrist ][ 1 ][ 3 ], ( *bonetransform )[ iWrist ][ 2 ][ 3 ] };
