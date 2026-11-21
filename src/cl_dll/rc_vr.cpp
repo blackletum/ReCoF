@@ -184,6 +184,7 @@ struct RcVrHand_t
 	vr::VRControllerState_t		state, old;
 };
 static RcVrHand_t	s_rgHand[ 2 ];						// 0 left, 1 right
+static bool			s_bTwoHand;							// the left hand steadies the gun
 static float		s_rgAimPoint[ 3 ];					// where the right hand points in the game
 static bool			s_bAimPoint;
 
@@ -210,7 +211,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -361,6 +362,7 @@ bool RcVR_Init( void )
 	rc_vr_holsters		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_holsters", "1", FCVAR_ARCHIVE );
 	rc_vr_hip_drop		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_hip_drop", "0.6", FCVAR_ARCHIVE );
 	rc_vr_physcrouch	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_physcrouch", "1", FCVAR_ARCHIVE );
+	rc_vr_twohand		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_twohand", "1", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -690,6 +692,48 @@ static void RcVrUpdateBody( const float *gameEye, float yaw, bool bOwnView )
 
 	RcVrUpdateHand( 0, s_rgHeadGame, head, yaw );
 	RcVrUpdateHand( 1, s_rgHeadGame, head, yaw );
+
+	// two hands: the left grip held with the left hand 10 to 80 cm in front of the right one (within 45 degrees of
+	// where the gun points) aims along the line from the right hand to the left, the right hand's roll kept
+	RcVrHand_t &L = s_rgHand[ 0 ], &R = s_rgHand[ 1 ];
+	bool bGrip = ( L.state.ulButtonPressed & vr::ButtonMaskFromId( vr::k_EButton_Grip ) ) != 0;
+	s_bTwoHand = false;
+	if ( bOwnView && rc_vr_twohand->value && L.valid && R.valid && bGrip )
+	{
+		float d[ 3 ] = { L.tpos[ 0 ] - R.tpos[ 0 ], L.tpos[ 1 ] - R.tpos[ 1 ], L.tpos[ 2 ] - R.tpos[ 2 ] };
+		float len = sqrtf( d[ 0 ] * d[ 0 ] + d[ 1 ] * d[ 1 ] + d[ 2 ] * d[ 2 ] );
+		if ( len > 0.1f && len < 0.8f )
+		{
+			for ( int i = 0; i < 3; i++ )
+				d[ i ] /= len;
+			float c = d[ 0 ] * R.tfwd[ 0 ] + d[ 1 ] * R.tfwd[ 1 ] + d[ 2 ] * R.tfwd[ 2 ];
+			if ( c > 0.707f )
+			{
+				s_bTwoHand = true;
+				memcpy( R.tfwd, d, sizeof( d ) );
+				float f[ 3 ], r[ 3 ], u[ 3 ];
+				RcVrDirToGame( d, f, yaw );
+				// the right axis from the right hand, made square to the new forward
+				float k = R.right[ 0 ] * f[ 0 ] + R.right[ 1 ] * f[ 1 ] + R.right[ 2 ] * f[ 2 ];
+				for ( int i = 0; i < 3; i++ )
+					r[ i ] = R.right[ i ] - f[ i ] * k;
+				float rl = sqrtf( r[ 0 ] * r[ 0 ] + r[ 1 ] * r[ 1 ] + r[ 2 ] * r[ 2 ] );
+				if ( rl > 0.01f )
+				{
+					for ( int i = 0; i < 3; i++ )
+						r[ i ] /= rl;
+					// up = right x forward (game axes: forward x, left y, up z; right is -left)
+					u[ 0 ] = r[ 1 ] * f[ 2 ] - r[ 2 ] * f[ 1 ];
+					u[ 1 ] = r[ 2 ] * f[ 0 ] - r[ 0 ] * f[ 2 ];
+					u[ 2 ] = r[ 0 ] * f[ 1 ] - r[ 1 ] * f[ 0 ];
+					memcpy( R.fwd, f, sizeof( f ) );
+					memcpy( R.right, r, sizeof( r ) );
+					memcpy( R.up, u, sizeof( u ) );
+					RcVrAngles( R.fwd, R.right, R.up, R.angles );
+				}
+			}
+		}
+	}
 }
 
 // an eye's game origin and angles
@@ -1525,6 +1569,10 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 	if ( RcVrPressed( L, vr::k_EButton_ApplicationMenu ) && !RcVrWasPressed( L, vr::k_EButton_ApplicationMenu ) )
 		RcVrKey( VK_ESCAPE );
 
+	// the hands with this frame's buttons first (the two-handed hold decides what the left grip does)
+	if ( s_bOwnView )
+		RcVrUpdateBody( s_rgGameEye, s_flTurnYaw, true );
+
 	// melee weapons: a swing of the right hand faster than rc_vr_swing metres a second attacks (the server's trace
 	// goes where the hand points); the trigger still works
 	static float s_flSwingUntil, s_flSwingNext;
@@ -1575,7 +1623,7 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 		s_bGripHolster = false;
 	RcVrButton( RCVB_USE, bGrip && !s_bGripHolster );
 	RcVrButton( RCVB_RELOAD, RcVrPressed( R, vr::k_EButton_A ) );
-	RcVrButton( RCVB_DODGE, RcVrPressed( L, vr::k_EButton_Grip ) && !RcVrPressed( R, vr::k_EButton_Grip ) );
+	RcVrButton( RCVB_DODGE, RcVrPressed( L, vr::k_EButton_Grip ) && !RcVrPressed( R, vr::k_EButton_Grip ) && !s_bTwoHand );
 	RcVrButton( RCVB_SPRINT, RcVrPressed( L, vr::k_EButton_SteamVR_Touchpad ) );
 	RcVrButton( RCVB_INVENTORY, RcVrPressed( L, vr::k_EButton_A ) );
 	bool bStraight = fabsf( R.state.rAxis[ 0 ].x ) < 0.5f;	// not while the stick turns
