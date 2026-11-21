@@ -200,6 +200,7 @@ struct RcVrHand_t
 	vr::VRControllerState_t		state, old;
 };
 static RcVrHand_t	s_rgHand[ 2 ];						// 0 left, 1 right
+static float		s_flMotion;							// 0 to 1: how much the stick moves or turns the player (vignette)
 static bool			s_bTwoHand;							// the left hand steadies the gun
 static float		s_rgAimPoint[ 3 ];					// where the right hand points in the game
 static bool			s_bAimPoint;
@@ -227,7 +228,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_msaa, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_msaa, *rc_vr_vignette, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -380,6 +381,7 @@ bool RcVR_Init( void )
 	rc_vr_physcrouch	= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_physcrouch", "1", FCVAR_ARCHIVE );
 	rc_vr_twohand		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_twohand", "1", FCVAR_ARCHIVE );
 	rc_vr_msaa			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_msaa", "4", FCVAR_ARCHIVE );
+	rc_vr_vignette		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_vignette", "0", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -1858,6 +1860,10 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 	// movement: the left stick, relative to the head (or the left hand), turned into the aim's frame
 	float mx = L.state.rAxis[ 0 ].x, my = L.state.rAxis[ 0 ].y;
 	float mag = sqrtf( mx * mx + my * my );
+	float turn = rc_vr_snapturn->value > 0 ? 0 : fabsf( tx );
+	float motion = ( mag > 0.15f ? mag : 0 ) > turn ? ( mag > 0.15f ? mag : 0 ) : turn;
+	if ( motion > 1 ) motion = 1;
+	s_flMotion += ( motion - s_flMotion ) * ( frametime * 8 < 1 ? frametime * 8 : 1 );
 	if ( mag > 0.15f )
 	{
 		if ( mag > 1 )
@@ -2010,10 +2016,59 @@ static void RcVrDrawHandMarker( const RcVrHand_t &hand, float len )
 	gl.glEnd();
 }
 
+// the comfort vignette: the edges of the eye darkened while the sticks move or turn the player (rc_vr_vignette 0
+// to 1, how far in it closes), round the eye's own centre (its projection is not centred)
+static void RcVrVignette( int e )
+{
+	float k = rc_vr_vignette->value * s_flMotion;
+	if ( k < 0.01f )
+		return;
+	if ( k > 1 ) k = 1;
+	const float *tan = s_rgTan[ e ];
+	float cx = -( tan[ 0 ] + tan[ 1 ] ) / ( tan[ 1 ] - tan[ 0 ] );
+	float cy = -( tan[ 2 ] + tan[ 3 ] ) / ( tan[ 3 ] - tan[ 2 ] );
+	float ri = 1.0f - 0.55f * k, ro = ri + 0.35f;
+	gl.glMatrixMode( GL_PROJECTION );
+	gl.glLoadIdentity();
+	gl.glOrtho( -1, 1, -1, 1, -1, 1 );
+	gl.glMatrixMode( GL_MODELVIEW );
+	gl.glLoadIdentity();
+	gl.glDisable( GL_TEXTURE_2D );
+	gl.glEnable( GL_BLEND );
+	gl.glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+	gl.glBegin( GL_QUAD_STRIP );
+	for ( int i = 0; i <= 48; i++ )
+	{
+		float a = i * 2 * RCVR_PI / 48, c = cosf( a ), s = sinf( a );
+		gl.glColor4f( 0, 0, 0, 0 );
+		gl.glVertex3f( cx + c * ri, cy + s * ri, 0 );
+		gl.glColor4f( 0, 0, 0, 1 );
+		gl.glVertex3f( cx + c * ro, cy + s * ro, 0 );
+	}
+	gl.glEnd();
+	gl.glBegin( GL_QUAD_STRIP );
+	for ( int i = 0; i <= 48; i++ )
+	{
+		float a = i * 2 * RCVR_PI / 48, c = cosf( a ), s = sinf( a );
+		gl.glVertex3f( cx + c * ro, cy + s * ro, 0 );
+		gl.glVertex3f( cx + c * 4, cy + s * 4, 0 );
+	}
+	gl.glEnd();
+}
+
 static void RcVrDrawOverlays( int e, float screen[ 3 ][ 4 ], float sw, float sh, bool bMenu, bool bWorld )
 {
 	s_gl.BindFramebuffer( GL_FRAMEBUFFER, s_rgFbo[ e ] );
 	gl.glViewport( 0, 0, s_iEyeW, s_iEyeH );
+
+	if ( bWorld && !bMenu )
+	{
+		gl.glDisable( GL_DEPTH_TEST );
+		gl.glDisable( GL_CULL_FACE );
+		gl.glDisable( GL_ALPHA_TEST );
+		gl.glDisable( GL_FOG );
+		RcVrVignette( e );
+	}
 
 	if ( !bWorld )
 	{
