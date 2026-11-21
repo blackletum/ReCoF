@@ -5,6 +5,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "rc_vr.h"	// ReCoF VR (B535)
 
 extern cvar_t *cl_noiseeffect;
 extern cvar_t *cl_noiseamount;
@@ -33,6 +34,11 @@ int CNeffect::Draw( float flTime )
 	int a;
 
 	if ( !cl_noiseeffect->value )
+		return 1;
+
+	// ReCoF VR (B535): the 2D is a screen hanging in front of the head in VR, and the noise made it a grey
+	// rectangle
+	if ( RcVR_Active() )
 		return 1;
 
 	iWidth = gHUD.GetSpriteRect( m_HUD_snoise_guess ).right - gHUD.GetSpriteRect( m_HUD_snoise_guess ).left;

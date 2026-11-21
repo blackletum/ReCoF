@@ -817,6 +817,10 @@ void CHud :: DrawBlurTest( float frametime )
 	if ( !cv_screenblur_guess->value )
 		return;
 
+	// ReCoF VR (B535): the blur copies the window, which holds only the 2D in VR (the world is in the eyes)
+	if ( RcVR_Active() )
+		return;
+
 	bool bDamaged = false;
 	if ( m_flDamageTime_guess > gEngfuncs.GetClientTime() )
 		bDamaged = true;
