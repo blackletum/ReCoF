@@ -31,6 +31,7 @@
 #include "gl_texloader.h"
 #include "rc_prof.h"	// ReCoF
 #include "rc_gpumodel.h"	// ReCoF (B287 step 4)
+#include "rc_vr.h"	// ReCoF VR (B533)
 
 extern engine_studio_api_t IEngineStudio;
 extern int g_iUnlockClothes_guess;
@@ -1138,6 +1139,14 @@ void CStudioModelRenderer::Chrome (int *pchrome, int bone, vec3_t normal)
 		VectorIRotate( chromeupvec, (*m_pbonetransform)[bone], g_chromeup[bone] );
 		VectorIRotate( chromerightvec, (*m_pbonetransform)[bone], g_chromeright[bone] );
 
+		// ReCoF VR (B533): a hand model scaled to a real size has scaled bone matrices
+		float flRcVrScale = RcVR_BoneScale( m_pCurrentEntity );
+		if ( flRcVrScale != 1 )
+		{
+			VectorScale( g_chromeup[bone], 1 / flRcVrScale, g_chromeup[bone] );
+			VectorScale( g_chromeright[bone], 1 / flRcVrScale, g_chromeright[bone] );
+		}
+
 		g_chromeage[bone] = *m_pStudioModelCount;
 	}
 
@@ -1343,10 +1352,13 @@ void CStudioModelRenderer::GL_SetupLighting ()
 
 	// TODO: only do it for bones that actually have textures
 	int i;
+	float flRcVrInv = 1 / RcVR_BoneScale( m_pCurrentEntity );	// ReCoF VR (B533): a hand model scaled to a real size
 	for (i = 0; i < m_pStudioHeader->numbones; i++)
 	{
 	//	VectorIRotate( g_lightvec, (*m_pbonetransform)[i], g_blightvec[i] );
 		VectorIRotate( light.lightdir, (*m_pbonetransform)[i], g_blightvec[i] );
+		if ( flRcVrInv != 1 )
+			VectorScale( g_blightvec[i], flRcVrInv, g_blightvec[i] );
 	}
 
 	//
@@ -1430,7 +1442,7 @@ void CStudioModelRenderer::GL_SetupLighting ()
 			}
 
 			VectorIRotate( vec, (*m_pbonetransform)[b], g_bdynlightvec[g_numdynlights][b] );
-			VectorScale( g_bdynlightvec[g_numdynlights][b], atten, g_bdynlightvec[g_numdynlights][b] );
+			VectorScale( g_bdynlightvec[g_numdynlights][b], atten * flRcVrInv, g_bdynlightvec[g_numdynlights][b] );	// ReCoF VR (B533)
 
 			if (dlights[i]->spot_texture[0])
 			{
@@ -2070,14 +2082,19 @@ void CStudioModelRenderer::GL_DrawPoints ( )
 			gpulight.lightdir[c] = light.lightdir[c];
 		}
 		gpulight.lambert = cv_lambert->value > 1.0 ? cv_lambert->value : 1.0;	// Lighting: r <= 1 is 1
+		// ReCoF VR (B533): a hand model scaled to a real size has scaled bone matrices, so its normals come out
+		// scaled in the shader; its light direction and light colours take the inverse
+		float flRcVrInv = 1 / RcVR_BoneScale( m_pCurrentEntity );
+		for (int c = 0; c < 3; c++)
+			gpulight.lightdir[c] *= flRcVrInv;
 		gpulight.numdl = g_numdynlights;
 		for (int l = 0; l < g_numdynlights; l++)
 		{
 			memcpy(gpulight.dlorg[l], g_rcdlorg[l], sizeof(gpulight.dlorg[l]));
 			memcpy(gpulight.dlspot[l], g_rcdlspot[l], sizeof(gpulight.dlspot[l]));
-			gpulight.dlcolor[l][0] = g_dynlightcolor[l][0];
-			gpulight.dlcolor[l][1] = g_dynlightcolor[l][1];
-			gpulight.dlcolor[l][2] = g_dynlightcolor[l][2];
+			gpulight.dlcolor[l][0] = g_dynlightcolor[l][0] * flRcVrInv;
+			gpulight.dlcolor[l][1] = g_dynlightcolor[l][1] * flRcVrInv;
+			gpulight.dlcolor[l][2] = g_dynlightcolor[l][2] * flRcVrInv;
 		}
 
 		RcGpuBegin((const float *)(*m_pbonetransform), m_pStudioHeader->numbones, *m_pStudioModelCount, m_pStudioHeader, &gpulight);

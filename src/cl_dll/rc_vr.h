@@ -46,6 +46,9 @@ void	RcVR_CreateEntities( void );
 // ev_common.cpp EV_GetGunPosition: the gun's offset from the eye this frame, when the shots leave from the hand
 bool	RcVR_HandOffset( float *off );
 
+// gl_studiomodel.cpp lighting: the scale the hand model's bone matrices got (RcVR_AdjustBones), 1 for others
+float	RcVR_BoneScale( struct cl_entity_s *ent );
+
 // GameStudioModelRenderer.cpp: a model drawn without its events (the second eye, the left hand)
 bool	RcVR_NoEvents( struct cl_entity_s *ent );
 

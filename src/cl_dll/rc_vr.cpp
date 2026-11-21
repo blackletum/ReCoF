@@ -230,7 +230,7 @@ static float		s_flBothGrips;
 
 static cvar_t *rc_vr_scale, *rc_vr_snapturn, *rc_vr_turnspeed, *rc_vr_aimpitch, *rc_vr_grip_fwd, *rc_vr_grip_right,
 	*rc_vr_grip_up, *rc_vr_hidearms, *rc_vr_hud_dist, *rc_vr_hud_width, *rc_vr_menu_dist, *rc_vr_menu_width,
-	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_msaa, *rc_vr_vignette, *rc_vr_handshots, *rc_vr_debug;
+	*rc_vr_movehand, *rc_vr_lean, *rc_vr_renderscale, *rc_vr_mirror, *rc_vr_lefthand_item, *rc_vr_lefthand, *rc_vr_swing, *rc_vr_holsters, *rc_vr_hip_drop, *rc_vr_physcrouch, *rc_vr_twohand, *rc_vr_msaa, *rc_vr_vignette, *rc_vr_handshots, *rc_vr_handscale, *rc_vr_debug;
 
 extern int g_DrawHeadShied;						// view.cpp
 extern vec3_t v_origin, v_angles;				// view.cpp
@@ -385,6 +385,7 @@ bool RcVR_Init( void )
 	rc_vr_msaa			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_msaa", "4", FCVAR_ARCHIVE );
 	rc_vr_vignette		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_vignette", "0", FCVAR_ARCHIVE );
 	rc_vr_handshots		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_handshots", "1", FCVAR_ARCHIVE );
+	rc_vr_handscale		= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_handscale", "1", FCVAR_ARCHIVE );
 	rc_vr_debug			= gEngfuncs.pfnRegisterVariable( (char *)"rc_vr_debug", "0", 0 );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_recenter", RcVrRecentre_f );
 	gEngfuncs.pfnAddCommand( (char *)"rc_vr_info", RcVrInfo_f );
@@ -1429,8 +1430,58 @@ static void RcVrFold( studiohdr_t *hdr, float ( *bonetransform )[ 128 ][ 3 ][ 4 
 	}
 }
 
+// B533: Cry of Fear's weapon models are far bigger than life, made to be seen from the eye (a Glock's forearm is
+// 26 units long, the empty hands' 65, a real one about 10 at rc_vr_scale 37.5): the model scaled round the wrist
+// to a real forearm, 26 cm times rc_vr_handscale. The lighting of the scaled model (gl_studiomodel.cpp) divides
+// its light vectors by the scale (RcVR_BoneScale), since it takes them through the bone matrices.
+static struct cl_entity_s	*s_pScaledEnt;
+static float				s_flBoneScale = 1;
+
+static void RcVrScaleHand( struct cl_entity_s *ent, studiohdr_t *hdr, float ( *bonetransform )[ 128 ][ 3 ][ 4 ], float ( *lighttransform )[ 128 ][ 3 ][ 4 ], int iWrist )
+{
+	if ( rc_vr_handscale->value <= 0 )
+		return;
+	mstudiobone_t *bones = (mstudiobone_t *)( (byte *)hdr + hdr->boneindex );
+	float w[ 3 ] = { ( *bonetransform )[ iWrist ][ 0 ][ 3 ], ( *bonetransform )[ iWrist ][ 1 ][ 3 ], ( *bonetransform )[ iWrist ][ 2 ][ 3 ] };
+
+	// the forearm: the wrist to the first bone up the chain that is not on it
+	float len = 0;
+	for ( int b = bones[ iWrist ].parent; b >= 0 && len < 2; b = bones[ b ].parent )
+	{
+		float d[ 3 ] = { ( *bonetransform )[ b ][ 0 ][ 3 ] - w[ 0 ], ( *bonetransform )[ b ][ 1 ][ 3 ] - w[ 1 ], ( *bonetransform )[ b ][ 2 ][ 3 ] - w[ 2 ] };
+		len = sqrtf( d[ 0 ] * d[ 0 ] + d[ 1 ] * d[ 1 ] + d[ 2 ] * d[ 2 ] );
+	}
+	if ( len < 2 )
+		return;
+	float s = 0.26f * rc_vr_scale->value * rc_vr_handscale->value / len;
+	if ( s < 0.05f ) s = 0.05f;
+	if ( s > 1.5f ) s = 1.5f;
+	if ( fabsf( s - 1 ) < 0.01f )
+		return;
+
+	for ( int b = 0; b < hdr->numbones; b++ )
+	{
+		for ( int i = 0; i < 3; i++ )
+		{
+			for ( int j = 0; j < 3; j++ )
+				( *bonetransform )[ b ][ i ][ j ] *= s;
+			( *bonetransform )[ b ][ i ][ 3 ] = w[ i ] + s * ( ( *bonetransform )[ b ][ i ][ 3 ] - w[ i ] );
+			if ( lighttransform )
+				( *lighttransform )[ b ][ i ][ 3 ] = w[ i ] + s * ( ( *lighttransform )[ b ][ i ][ 3 ] - w[ i ] );
+		}
+	}
+	s_pScaledEnt = ent;
+	s_flBoneScale = s;
+}
+
+float RcVR_BoneScale( struct cl_entity_s *ent )
+{
+	return ( s_bActive && ent && ent == s_pScaledEnt ) ? s_flBoneScale : 1.0f;
+}
+
 void RcVR_AdjustBones( struct cl_entity_s *ent, void *pStudioHeader, float ( *bonetransform )[ 128 ][ 3 ][ 4 ], float ( *lighttransform )[ 128 ][ 3 ][ 4 ] )
 {
+	s_pScaledEnt = NULL;
 	if ( !s_bActive || !s_bOwnView || !pStudioHeader || !bonetransform )
 		return;
 
@@ -1474,6 +1525,7 @@ void RcVR_AdjustBones( struct cl_entity_s *ent, void *pStudioHeader, float ( *bo
 					( *lighttransform )[ b ][ i ][ 3 ] += d[ i ];
 			}
 		}
+		RcVrScaleHand( ent, hdr, bonetransform, lighttransform, iWrist );
 	}
 
 	if ( bHandEnt )
