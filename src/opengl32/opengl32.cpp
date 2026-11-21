@@ -322,6 +322,9 @@ void sys_glFrustum (GLdouble left,  GLdouble right,  GLdouble bottom,  GLdouble 
 		(*orig_glGetIntegerv) ( GL_MATRIX_MODE, &mode );
 		if ( mode == GL_PROJECTION )
 		{
+			// a nearer plane (the engine's 4 units are 11 cm in a headset): a gun raised to the eye is not cut
+			if ( zNear > 2 )
+				zNear = 2;
 			(*orig_glFrustum) ( s_rgRcVrTan[ 0 ] * zNear, s_rgRcVrTan[ 1 ] * zNear, s_rgRcVrTan[ 2 ] * zNear, s_rgRcVrTan[ 3 ] * zNear, zNear, zFar );
 			return;
 		}
