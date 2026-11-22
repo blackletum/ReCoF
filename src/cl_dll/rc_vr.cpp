@@ -1027,9 +1027,16 @@ void RcVR_CalcRefdef( struct ref_params_s *pparams, void ( *pfnGame )( struct re
 			// real crouch, and its hull changes halfway through the duck), and the head's own drop lowers it
 			if ( s_bPhysCrouch )
 			{
-				float down[ 3 ] = { pparams->simorg[ 0 ], pparams->simorg[ 1 ], pparams->simorg[ 2 ] - 80 };
-				pmtrace_t *tr = gEngfuncs.PM_TraceLine( pparams->simorg, down, PM_TRACELINE_PHYSENTSONLY, 2, -1 );
-				s_flFeetZ = tr->fraction < 1 ? tr->endpos[ 2 ] : pparams->simorg[ 2 ] - 18;
+				// B539: in the air the feet are the ducked hull's bottom (the duck is at once there), not the floor
+				// 80 units under it, or a jump or a fall left the view on the ground
+				if ( pparams->onground )
+				{
+					float down[ 3 ] = { pparams->simorg[ 0 ], pparams->simorg[ 1 ], pparams->simorg[ 2 ] - 80 };
+					pmtrace_t *tr = gEngfuncs.PM_TraceLine( pparams->simorg, down, PM_TRACELINE_PHYSENTSONLY, 2, -1 );
+					s_flFeetZ = tr->fraction < 1 ? tr->endpos[ 2 ] : pparams->simorg[ 2 ] - 18;
+				}
+				else
+					s_flFeetZ = pparams->simorg[ 2 ] - 18;
 				eye[ 2 ] = s_flFeetZ + 64;
 			}
 		}
@@ -2539,9 +2546,10 @@ static void __stdcall RcVrSwap( HDC hDC )
 		s_iFrames++;
 		if ( now >= s_flNext || now < s_flNext - 2 )
 		{
-			gEngfuncs.Con_Printf( "ReCoF VR: %d pictures/s, %s, hands %s %s, %s%s, turn %.0f\n", s_iFrames, bWorld ? "level" : "no level",
-				s_rgHand[ 0 ].valid ? "L" : "-", s_rgHand[ 1 ].valid ? "R" : "-", s_bCursorMode ? "pointer" : "game",
-				s_bPointerOnScreen ? " on screen" : "", s_flTurnYaw );
+			gEngfuncs.Con_Printf( "ReCoF VR: %d pictures/s, %s, hands %s %s, %s%s, turn %.0f, right stick %.2f %.2f, jump %d, crouch %d%s\n",
+				s_iFrames, bWorld ? "level" : "no level", s_rgHand[ 0 ].valid ? "L" : "-", s_rgHand[ 1 ].valid ? "R" : "-",
+				s_bCursorMode ? "pointer" : "game", s_bPointerOnScreen ? " on screen" : "", s_flTurnYaw, s_rgHand[ 1 ].state.rAxis[ 0 ].x,
+				s_rgHand[ 1 ].state.rAxis[ 0 ].y, s_rgButtonDown[ RCVB_JUMP ] ? 1 : 0, s_rgButtonDown[ RCVB_DUCK ] ? 1 : 0, s_bPhysCrouch ? " (for real)" : "" );
 			s_iFrames = 0;
 			s_flNext = now + 1;
 		}
