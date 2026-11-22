@@ -903,22 +903,31 @@ static void RcVrUnbindEye( void )
 
 static void ( *s_pfnPassEnd )( struct ref_params_s * );
 
+// B536: a model's angles have the pitch the other way round from a view's (the studio renderer turns it,
+// StudioModelRenderer.cpp StudioSetUpTransform; view.cpp V_CalcGunAngle gives the gun -pitch): the hands' view
+// style angles as a model's
+static void RcVrModelAngles( const RcVrHand_t &hand, cl_entity_t &ent )
+{
+	ent.angles[ 0 ] = -hand.angles[ 0 ];
+	ent.angles[ 1 ] = hand.angles[ 1 ];
+	ent.angles[ 2 ] = hand.angles[ 2 ];
+	VectorCopy( ent.angles, ent.curstate.angles );
+}
+
 static void RcVrPlaceViewModel( void )
 {
 	cl_entity_t *view = gEngfuncs.GetViewModel();
 	if ( !view || !s_rgHand[ 1 ].valid )
 		return;
 	VectorCopy( s_rgHand[ 1 ].pos, view->origin );
-	VectorCopy( s_rgHand[ 1 ].angles, view->angles );
-	VectorCopy( s_rgHand[ 1 ].angles, view->curstate.angles );
+	RcVrModelAngles( s_rgHand[ 1 ], *view );
 
 	// the left hand item (flashlight, lantern) on the left controller
 	if ( g_iHeadShieldType_guess == 3 && s_rgHand[ 0 ].valid && rc_vr_lefthand_item->value )
 	{
 		VectorCopy( s_rgHand[ 0 ].pos, g_HeadShieldEnt.origin );
 		VectorCopy( s_rgHand[ 0 ].pos, g_HeadShieldEnt.curstate.origin );
-		VectorCopy( s_rgHand[ 0 ].angles, g_HeadShieldEnt.angles );
-		VectorCopy( s_rgHand[ 0 ].angles, g_HeadShieldEnt.curstate.angles );
+		RcVrModelAngles( s_rgHand[ 0 ], g_HeadShieldEnt );
 	}
 }
 
@@ -1392,8 +1401,7 @@ static bool RcVrHandEntity( cl_entity_t &ent, int h, cl_entity_t *view, bool bWe
 	ent.curstate.movetype = MOVETYPE_NONE;
 	VectorCopy( s_rgHand[ h ].pos, ent.origin );
 	VectorCopy( s_rgHand[ h ].pos, ent.curstate.origin );
-	VectorCopy( s_rgHand[ h ].angles, ent.angles );
-	VectorCopy( s_rgHand[ h ].angles, ent.curstate.angles );
+	RcVrModelAngles( s_rgHand[ h ], ent );
 	return gEngfuncs.CL_CreateVisibleEntity( ET_NORMAL, &ent ) != 0;
 }
 
