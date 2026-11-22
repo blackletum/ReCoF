@@ -677,10 +677,13 @@ void CTaskbar::RunFrame()
 	surface()->GetScreenSize( wide, tall );
 	if ( s_iRcWide && ( wide != s_iRcWide || tall != s_iRcTall ) )
 	{
-		for ( int i = 0; i < GetChildCount(); i++ )
+		// B540: by VPANEL, as a child from another module (the server browser, serverbrowser.dll) has no Panel in
+		// this one: Panel::GetChild gives NULL for it
+		VPANEL root = GetVPanel();
+		for ( int i = 0; i < ipanel()->GetChildCount( root ); i++ )
 		{
-			VPANEL panel = GetChild( i )->GetVPanel();
-			if ( !ipanel()->IsPopup( panel ) )
+			VPANEL panel = ipanel()->GetChild( root, i );
+			if ( !panel || !ipanel()->IsPopup( panel ) )
 				continue;
 
 			int x, y, w, h;
