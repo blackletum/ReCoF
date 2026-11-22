@@ -36,6 +36,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "build", "bin")
 EXTRA = os.path.join(ROOT, "tools", "dist_extra")
 COFLAUNCHAPP = os.path.join(ROOT, "build", "coflaunchapp", "CoFLaunchApp.exe")
+# ReCoF VR: SteamVR's API (OpenVR SDK, BSD-3-Clause), loaded by client.dll only with -vr, and its licence,
+# which the BSD terms ask to ship with the binary
+OPENVR = os.path.join(ROOT, "src", "external", "openvr")
 RC_VERSION = os.path.join(ROOT, "src", "cl_dll", "rc_version.h")
 
 # (path in the game folder, file in build/bin, what it is)
@@ -98,6 +101,10 @@ NOTES
   Windows Security, App & browser control, Smart App Control settings, Off
   (or Win+R, windowsdefender://smartapp/). On many Windows 11 versions it
   cannot be turned back on without resetting Windows.
+- VR (experimental): "Play ReCoF VR.bat" starts the game in a SteamVR headset
+  (the -vr launch option); start Steam and SteamVR first. openvr_api.dll is
+  SteamVR's API, used only with -vr (licence in openvr_api.LICENSE.txt). The
+  guide is docs/vr.md of the ReCoF repository.
 - Sprays: Options, Spray makes your spray from a PNG, JPG, BMP, GIF or TIFF
   picture in cryoffear\\logos; Options, Keyboard has the Spray logo key
   (impulse 201). Single player has no wait between sprays.
@@ -217,6 +224,9 @@ def main():
         sys.exit("not built yet: %s (run the build.py links first)" % ", ".join(missing))
     if not os.path.isfile(COFLAUNCHAPP):
         sys.exit("not built yet: %s (run tools/coflaunchapp/build.py)" % COFLAUNCHAPP)
+    openvr_dll = os.path.join(OPENVR, "bin", "win32", "openvr_api.dll")
+    if not os.path.isfile(openvr_dll):
+        sys.exit("missing %s (see src/external/openvr/README.md)" % openvr_dll)
 
     # the main menu shows the version client.dll was built with
     with open(RC_VERSION, encoding="ascii") as f:
@@ -237,7 +247,17 @@ def main():
     staged.append(("CoFLaunchApp.exe", "settings launcher"))
     for name in sorted(os.listdir(EXTRA)):
         shutil.copyfile(os.path.join(EXTRA, name), os.path.join(stage, name))
-        staged.append((name, "test launch with the console log on" if name.endswith(".bat") else "ReCoF options for the launcher"))
+        if name.endswith("VR.bat"):
+            what = "VR test launch (-vr) with the console log on"
+        elif name.endswith(".bat"):
+            what = "test launch with the console log on"
+        else:
+            what = "ReCoF options for the launcher"
+        staged.append((name, what))
+    shutil.copyfile(openvr_dll, os.path.join(stage, "openvr_api.dll"))
+    staged.append(("openvr_api.dll", "SteamVR's API, loaded only with -vr"))
+    shutil.copyfile(os.path.join(OPENVR, "LICENSE"), os.path.join(stage, "openvr_api.LICENSE.txt"))
+    staged.append(("openvr_api.LICENSE.txt", "the licence of openvr_api.dll"))
 
     # the commit of the last source change, which is what the binaries were built from
     commit = subprocess.run(["git", "-C", ROOT, "log", "-1", "--format=%h", "--", "src"],
