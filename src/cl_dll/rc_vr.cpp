@@ -1719,6 +1719,37 @@ static void RcVrReadControllers( void )
 	s_bInputThisFrame = true;
 }
 
+// B538: a button still held when the pointer and the game swap (a menu or a panel opens or closes) counts only
+// once it was let go: X closed the inventory and, still down in the game a frame later, opened it again (input.cpp
+// IN_InventoryDown); the trigger that clicked a menu's last button fired the gun
+static uint64_t	s_rgulHeld[ 2 ];
+static bool		s_rgbTriggerHeld[ 2 ];
+static int		s_iHeldMode = -1;	// 1 pointer, 0 game
+
+static void RcVrHoldMask( bool bPointer )
+{
+	bool bSwap = s_iHeldMode != ( bPointer ? 1 : 0 );
+	s_iHeldMode = bPointer ? 1 : 0;
+	for ( int h = 0; h < 2; h++ )
+	{
+		vr::VRControllerState_t &st = s_rgHand[ h ].state;
+		if ( bSwap )
+		{
+			s_rgulHeld[ h ] = st.ulButtonPressed;
+			s_rgbTriggerHeld[ h ] = st.rAxis[ 1 ].x > 0.3f;
+		}
+		s_rgulHeld[ h ] &= st.ulButtonPressed;
+		st.ulButtonPressed &= ~s_rgulHeld[ h ];
+		if ( s_rgbTriggerHeld[ h ] )
+		{
+			if ( st.rAxis[ 1 ].x > 0.3f )
+				st.rAxis[ 1 ].x = 0;
+			else
+				s_rgbTriggerHeld[ h ] = false;
+		}
+	}
+}
+
 // the pointer's clicks on the screen: the right trigger is the left mouse button, B and Y are Escape
 static void RcVrPointerInput( void )
 {
@@ -1801,6 +1832,7 @@ void RcVR_CreateMove( float frametime, struct usercmd_s *cmd, int active, int bA
 
 	RcVrHand_t &L = s_rgHand[ 0 ], &R = s_rgHand[ 1 ];
 	s_bCursorMode = RcIN_MouseFree() != 0 || !active;
+	RcVrHoldMask( s_bCursorMode );
 
 	// both grips held 1.5 s: recentre
 	if ( RcVrPressed( L, vr::k_EButton_Grip ) && RcVrPressed( R, vr::k_EButton_Grip ) )
@@ -2459,6 +2491,7 @@ static void __stdcall RcVrSwap( HDC hDC )
 		if ( !s_bInputThisFrame )
 		{
 			RcVrReadControllers();
+			RcVrHoldMask( s_bCursorMode );
 			RcVrPointerInput();
 		}
 
