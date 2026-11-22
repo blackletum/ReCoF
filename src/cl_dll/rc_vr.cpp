@@ -102,7 +102,6 @@ typedef void	( APIENTRY *RcGlFramebufferRenderbuffer_t )( GLenum, GLenum, GLenum
 typedef GLenum	( APIENTRY *RcGlCheckFramebufferStatus_t )( GLenum );
 typedef void	( APIENTRY *RcGlRenderbufferStorageMultisample_t )( GLenum, GLsizei, GLenum, GLsizei, GLsizei );
 typedef void	( APIENTRY *RcGlBlitFramebuffer_t )( GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum );
-typedef void	( APIENTRY *RcGlGenTextures_t )( GLsizei, GLuint * );
 typedef void	( APIENTRY *RcGlLineWidth_t )( GLfloat );
 typedef void	( APIENTRY *RcGlPointSize_t )( GLfloat );
 typedef void	( APIENTRY *RcGlActiveTexture_t )( GLenum );
@@ -120,7 +119,6 @@ static struct
 	RcGlCheckFramebufferStatus_t	CheckFramebufferStatus;
 	RcGlRenderbufferStorageMultisample_t	RenderbufferStorageMultisample;
 	RcGlBlitFramebuffer_t			BlitFramebuffer;
-	RcGlGenTextures_t				GenTextures;
 	RcGlLineWidth_t					LineWidth;
 	RcGlPointSize_t					PointSize;
 	RcGlActiveTexture_t				ActiveTexture;
@@ -507,9 +505,20 @@ static void *RcVrGL( const char *name, const char *ext )
 	return p;
 }
 
+// B537: the engine numbers its textures itself, from 1 up, without glGenTextures (GL_DRAW.C GL_LoadTexture2,
+// texture_extension_number), and the driver's glGenTextures gives the lowest free name (NVIDIA: 301 after 1 to
+// 300 are bound, and names the engine freed): the next level's textures were uploaded into the eyes and the
+// screen. The client keeps its own textures from 1 << 25 for this (gl_texloader.cpp); these come from there too.
+extern int current_ext_texture_id;	// gl_texloader.cpp
+
+static GLuint RcVrTexName( void )
+{
+	return (GLuint)current_ext_texture_id++;
+}
+
 static bool RcVrMakeEye( int e )
 {
-	s_gl.GenTextures( 1, &s_rgEyeTex[ e ] );
+	s_rgEyeTex[ e ] = RcVrTexName();
 	gl.glBindTexture( GL_TEXTURE_2D, s_rgEyeTex[ e ] );
 	gl.glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	gl.glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
@@ -615,12 +624,11 @@ static bool RcVrMakeGL( void )
 	s_gl.BlitFramebuffer = (RcGlBlitFramebuffer_t)RcVrGL( "glBlitFramebuffer", "glBlitFramebufferEXT" );
 	s_gl.ActiveTexture = (RcGlActiveTexture_t)RcVrGL( "glActiveTexture", "glActiveTextureARB" );
 	HMODULE hGL = GetModuleHandleA( "opengl32.dll" );
-	s_gl.GenTextures = (RcGlGenTextures_t)GetProcAddress( hGL, "glGenTextures" );
 	s_gl.LineWidth = (RcGlLineWidth_t)GetProcAddress( hGL, "glLineWidth" );
 	s_gl.PointSize = (RcGlPointSize_t)GetProcAddress( hGL, "glPointSize" );
 
 	if ( !s_gl.GenFramebuffers || !s_gl.BindFramebuffer || !s_gl.FramebufferTexture2D || !s_gl.GenRenderbuffers || !s_gl.BindRenderbuffer ||
-		!s_gl.RenderbufferStorage || !s_gl.FramebufferRenderbuffer || !s_gl.CheckFramebufferStatus || !s_gl.GenTextures || !s_gl.LineWidth || !s_gl.PointSize )
+		!s_gl.RenderbufferStorage || !s_gl.FramebufferRenderbuffer || !s_gl.CheckFramebufferStatus || !s_gl.LineWidth || !s_gl.PointSize )
 	{
 		gEngfuncs.Con_Printf( "ReCoF VR: the driver has no framebuffer objects (OpenGL %s)\n", (const char *)gl.glGetString( GL_VERSION ) );
 		return false;
@@ -643,7 +651,7 @@ static bool RcVrMakeGL( void )
 			s_iSamples = 0;
 	}
 
-	s_gl.GenTextures( 1, &s_texScreen );
+	s_texScreen = RcVrTexName();
 	gl.glBindTexture( GL_TEXTURE_2D, iOldTex );
 	if ( !ok )
 		return false;
@@ -1210,7 +1218,7 @@ static void RcVrGrayEyes( void )
 				s_iGrayAmount = rcgl.glGetUniformLocation( s_iGrayProgram, "amount" );
 				GLint iOld = 0;
 				gl.glGetIntegerv( GL_TEXTURE_BINDING_2D, &iOld );
-				s_gl.GenTextures( 1, &s_texGray );
+				s_texGray = RcVrTexName();
 				gl.glBindTexture( GL_TEXTURE_2D, s_texGray );
 				gl.glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
 				gl.glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
