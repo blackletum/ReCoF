@@ -1,6 +1,6 @@
 # VR (work in progress)
 
-Cry of Fear in a headset through SteamVR, on the `openvr` branch. It only switches on when the game starts with `-vr` (or `-openvr`): without it client.dll never loads `openvr_api.dll` and every VR hook returns at once, so flat play, its settings in config.cfg and the speedrun tools are unchanged. The first headset tests are with a Meta Quest 3S (2026-11-21). The bug rows are B510 to B535 in [bugs.md](bugs.md); the design is in the research report (`I:\COFPP\reports\ReCoF VR version research.md`, local).
+Cry of Fear in a headset through SteamVR, on the `openvr` branch. It only switches on when the game starts with `-vr` (or `-openvr`): without it client.dll never loads `openvr_api.dll` and every VR hook returns at once, so flat play, its settings in config.cfg and the speedrun tools are unchanged. The first headset tests are with a Meta Quest 3S (2026-11-21). The bug rows are B510 to B539 in [bugs.md](bugs.md); the design is in the research report (`I:\COFPP\reports\ReCoF VR version research.md`, local).
 
 ## Starting it
 
@@ -39,6 +39,8 @@ Holsters: the right hand at the right hip, the left hip or over the right should
 - The HUD hangs in front of the head with its dark parts see-through; menus, the inventory, keypads and the console are on a fixed panel, used with a laser from the right hand. With the game menu, its dialogs or the console open, the panel shows the game flat with the menu over it, in a dark room.
 - The weapon models are scaled round the wrist to a real forearm (Cry of Fear's are drawn far bigger than life, for the eye).
 - No screen noise or zoom blur in VR.
+- A button still held when a menu or a panel opens or closes counts only after it is let go (X that closes the inventory does not open it again, the trigger that clicks a menu does not fire).
+- The VR textures take their names from the client's own range, so a level change or a loaded save cannot overwrite them.
 - The grayscale of the black and white scenes and the screen fades are drawn in both eyes.
 - The near plane is 5 cm, so a gun raised to the eye is not cut.
 - Closing SteamVR during a game switches VR off and the game goes on flat.
@@ -67,7 +69,7 @@ Holsters: the right hand at the right hip, the left hip or over the right should
 | `rc_vr_msaa` | 4 | Multisampling samples (read at start; 0 for none) |
 | `rc_vr_mirror` | 1 | The left eye in the desktop window |
 | `rc_vr_vignette` | 0 | Darkens the edges of the view while the sticks move or turn the player (up to 1) |
-| `rc_vr_debug` | 0 | 1 prints a line a second |
+| `rc_vr_debug` | 0 | 1 prints a line a second (frame rate, hands, pointer or game, the right stick, jump and crouch) |
 
 `rc_vr_info` prints the state.
 
