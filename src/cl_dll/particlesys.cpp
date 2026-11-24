@@ -128,6 +128,13 @@ ParticleType::ParticleType( ParticleType *pNext )
 
 	m_bIsDefined = false;
 //	m_iCollision = 0;
+
+	// ReCoF (B542): retail left these to whatever the memory held, and only their .aur keys set them. A stray
+	// m_iWaterOnly_guess drew the type only under water, so an effect was missing for a whole map load
+	m_bBouncing = false;
+	m_iSprayYawMode_guess = 0;
+	m_iInheritAngle_guess = 0;
+	m_iWaterOnly_guess = 0;
 }
 
 particle* ParticleType::CreateParticle(ParticleSystem *pSys)//particle *pPart)
@@ -267,6 +274,7 @@ ParticleSystem::ParticleSystem( int iEntIndex, char *szFilename, int iViewModel,
 	m_flFadeStart_guess = 0;
 	m_flFadeTime_guess = 0;
 	m_iBone_guess = -1;
+	m_iLimited_guess = 0;	// ReCoF (B542): only the "limited" key set it
 	strncpy( m_szModel_guess, szModel, sizeof( m_szModel_guess ) );
 	if (!c_bCosTableInit)
 	{
