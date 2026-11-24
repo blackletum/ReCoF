@@ -259,6 +259,10 @@ extern void		RcCoop_StepOff( CBaseEntity *pPlayer );
 // (CoF_InterDoor.cpp)
 extern void		RcDoor_Pass( CBaseEntity *pDoor, CBaseEntity *pPlayer );
 extern void		RcDoor_Frame( bool bAll );
+// ReCoF story co-op (B550): a door into a level exit waits for the group in front of it: true when pActivator waits
+// there (or the group went through), false to go through now; and whether the group waits at pDoor (rc_coop.cpp)
+extern bool		RcCoop_DoorWait( CBaseEntity *pDoor, CBaseEntity *pActivator );
+extern bool		RcCoop_DoorWaiting( CBaseEntity *pDoor );
 // ReCoF (B328): a player's own setting, from the private userinfo key ReCoF's client sends (util.cpp)
 extern float		UTIL_PlayerSetting_rc( CBaseEntity *pPlayer, const char *key, const char *cvar );
 
