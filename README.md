@@ -1,6 +1,6 @@
 # ReCoF
 
-[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcaixax%2FReCoF%2Fbadges%2Fdownloads.json)](https://github.com/caixax/ReCoF/releases) [![Stable](https://img.shields.io/github/v/release/caixax/ReCoF?label=stable)](https://github.com/caixax/ReCoF/releases/latest) [![Beta](https://img.shields.io/github/v/release/caixax/ReCoF?include_prereleases&label=beta&color=orange)](https://github.com/caixax/ReCoF/releases) [![Launcher](https://img.shields.io/github/v/release/caixax/ReCoF-Launcher?label=launcher&color=blueviolet)](https://github.com/caixax/ReCoF-Launcher/releases/latest) [![Cry of Fear 1.6a](https://img.shields.io/badge/Cry%20of%20Fear-1.6a-8b0000?logo=steam)](https://store.steampowered.com/app/223710/) ![Windows](https://img.shields.io/badge/platform-Windows-0078D6)
+[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcaixax%2FReCoF%2Fbadges%2Fdownloads.json)](https://github.com/caixax/ReCoF/releases) [![Stable](https://img.shields.io/github/v/release/caixax/ReCoF?label=stable)](https://github.com/caixax/ReCoF/releases/latest) [![Beta](https://img.shields.io/github/v/release/caixax/ReCoF?include_prereleases&label=beta&color=orange)](https://github.com/caixax/ReCoF/releases) [![Launcher](https://img.shields.io/github/v/release/caixax/ReCoF-Launcher?label=launcher&color=blueviolet)](https://github.com/caixax/ReCoF-Launcher/releases/latest) [![Cry of Fear 1.6a](https://img.shields.io/badge/Cry%20of%20Fear-1.6a-8b0000?logo=steam)](https://store.steampowered.com/app/223710/) ![Windows](https://img.shields.io/badge/platform-Windows-0078D6) [![Discord](https://img.shields.io/badge/Discord-join%20the%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/m63drEUJ4v)
 
 Cry of Fear improved version.
 
@@ -16,6 +16,8 @@ ReCoF fixes the bugs of **Cry of Fear** (Steam release, version string `1.6a`) a
 > **Windows 11 and Smart App Control.** ReCoF's files are not digitally signed yet. On a PC where Smart App Control is on, Windows refuses to load them and the game stops with a "Bad Image" error that names `hw.dll` (error status `0xc0e90002`). To play ReCoF, turn it off: open **Windows Security**, go to **App & browser control**, click **Smart App Control settings** and choose **Off**. A shortcut: press Win+R, type `windowsdefender://smartapp/` and press Enter. On many versions of Windows 11 it cannot be turned back on afterwards without resetting Windows; Microsoft Defender keeps protecting the PC either way.
 >
 > Windows 10 is not affected, nor is Windows 11 when Smart App Control is off or still in evaluation mode. The ReCoF Launcher checks this and warns you before it starts the game.
+
+Questions, bug reports and news: the [ReCoF Discord](https://discord.gg/m63drEUJ4v).
 
 ## Principles
 
