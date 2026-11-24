@@ -236,6 +236,14 @@ void CInterDoor::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE us
 	if ( m_bDisabled )
 		return;
 
+	// ReCoF story co-op (B549): a teammate in the door's sequence does not keep this player out ("I can't use this
+	// while ... is using it"): he goes through as well, in a sequence of his own
+	if ( pev->owner && pev->owner != pActivator->edict() && RcCoop_Story() && !IsLocked() )
+	{
+		RcDoor_Pass( this, pActivator );
+		return;
+	}
+
 	if ( m_fNextUse > gpGlobals->time )
 		return;
 
@@ -724,5 +732,114 @@ void CCofInterDoorExitChange::Use( CBaseEntity *pActivator, CBaseEntity *pCaller
 			if ( pDoor )
 				pDoor->pev->target = pev->target;
 		}
+	}
+}
+
+//=========================================================
+// ReCoF story co-op (B549): several players go through one inter_door at once. The door's user (pev->owner) keeps
+// the door's think; a teammate who uses it meanwhile gets the same sequence (StartSequence and EndSequence run for
+// him with pev->owner set to him for the call) and comes out on time through RcDoor_Frame (CHalfLifeStoryCoop::Think)
+//=========================================================
+static EHANDLE s_hRcDoorWith[33];	// the door each player goes through alongside its user
+static float s_flRcDoorOut[33];	// when he comes out, 0 for none
+
+void RcDoor_Pass( CBaseEntity *pDoorEnt, CBaseEntity *pEnt )
+{
+	if ( !pDoorEnt || !FClassnameIs( pDoorEnt->pev, "inter_door" ) || !pEnt || !pEnt->IsPlayer() || !pEnt->IsAlive() )
+		return;
+
+	CInterDoor *pDoor = (CInterDoor *)pDoorEnt;
+	CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+	int i = ENTINDEX( pPlayer->edict() );
+
+	if ( i < 1 || i > 32 || pPlayer->b_GoingThroughADoor )
+		return;
+
+	if ( pDoor->m_iNewLevelDoorSound )
+		pPlayer->g_iDoorSound = pDoor->m_iNewLevelDoorSound;
+
+	if ( !pDoor->pev->owner )
+	{
+		pDoor->pev->owner = pPlayer->edict();
+		pDoor->StartSequence();
+		pDoor->m_fNextUse = gpGlobals->time + 1;
+		return;
+	}
+
+	// the demo chapters' last doors end the game for their user
+	if ( pDoor->pev->target && !strncmp( STRING( pDoor->pev->target ), "closegame", 9 ) )
+		return;
+
+	edict_t *pOwner = pDoor->pev->owner;
+	BASEPTR pfnThink = pDoor->m_pfnThink;
+	float flNextThink = pDoor->pev->nextthink, flRcNext = pDoor->m_fNextThink, flRcPevNext = pDoor->m_fPevNextThink;
+
+	pDoor->pev->owner = pPlayer->edict();
+	pDoor->StartSequence();
+	pDoor->pev->owner = pOwner;
+	pDoor->m_pfnThink = pfnThink;
+	pDoor->pev->nextthink = flNextThink;
+	pDoor->m_fNextThink = flRcNext;
+	pDoor->m_fPevNextThink = flRcPevNext;
+
+	s_hRcDoorWith[i] = pDoor;
+	s_flRcDoorOut[i] = gpGlobals->time + ( rc_door_skip.value ? 0.1 : 2 );
+	g_engfuncs.pfnServerPrint( UTIL_VarArgs( "ReCoF co-op: %s goes through the door with %s\n", STRING( pPlayer->pev->netname ), STRING( VARS( pOwner )->netname ) ) );
+}
+
+void RcDoor_Frame( bool bAll )
+{
+	for ( int i = 1; i <= 32; i++ )
+	{
+		// due (or set on another level: the time starts again on each one)
+		if ( !s_flRcDoorOut[i] || ( !bAll && gpGlobals->time < s_flRcDoorOut[i] && s_flRcDoorOut[i] - gpGlobals->time < 5 ) )
+			continue;
+
+		s_flRcDoorOut[i] = 0;
+		CBaseEntity *pDoorEnt = s_hRcDoorWith[i];
+		s_hRcDoorWith[i] = NULL;
+		CBaseEntity *pEnt = UTIL_PlayerByIndex( i );
+
+		if ( !pEnt || !pEnt->IsPlayer() || !( (CBasePlayer *)pEnt )->b_GoingThroughADoor )
+			continue;
+
+		CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+
+		if ( !pDoorEnt || !FClassnameIs( pDoorEnt->pev, "inter_door" ) )
+		{
+			// the door is gone (another level): he gets his view and control back where he is
+			pPlayer->b_GoingThroughADoor = false;
+			UTIL_ScreenFade( pPlayer, Vector( 0, 0, 0 ), 0.5, 0, 255, FFADE_IN );
+			pPlayer->EnableControl( TRUE );
+			pPlayer->m_iHideHUD &= ~( HIDEHUD_HEALTH | HIDEHUD_WEAPONS );
+			pPlayer->pev->flags &= ~FL_NOTARGET;
+			continue;
+		}
+
+		CInterDoor *pDoor = (CInterDoor *)pDoorEnt;
+		edict_t *pOwner = pDoor->pev->owner;
+		string_t iszProper = pDoor->m_sProperTarget;
+
+		pDoor->pev->owner = pPlayer->edict();
+		pDoor->m_sProperTarget = 0;	// fired once, by the door's user
+		pDoor->EndSequence();
+		pDoor->m_sProperTarget = iszProper;
+		pDoor->pev->owner = pOwner;
+		RcCoop_StepOff( pPlayer );
+	}
+
+	if ( !bAll )
+		return;
+
+	// before a level change the doors' own users come out too, or the level change takes them along frozen in the
+	// black (their door's think never comes on this level)
+	CBaseEntity *pEnt = NULL;
+	while ( ( pEnt = UTIL_FindEntityByClassname( pEnt, "inter_door" ) ) != NULL )
+	{
+		CInterDoor *pDoor = (CInterDoor *)pEnt;
+		if ( !pDoor->pev->owner || pDoor->m_pfnThink != static_cast <BASEPTR> ( &CInterDoor::EndSequence ) )
+			continue;
+		pDoor->EndSequence();
+		pDoor->SetThink( NULL );
 	}
 }

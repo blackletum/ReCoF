@@ -299,6 +299,26 @@ static bool RcCoopPresent( CBaseEntity *pEnt )
 	return pEnt && pEnt->IsPlayer() && pEnt->pev->fuser4 == 0 && pEnt->IsAlive() && pEnt->pev->deadflag == DEAD_NO && !RcCoopNoClient( pEnt );
 }
 
+// B549: a player put where a teammate stands (two through one door, two up one ladder) steps aside at once, as
+// B403 does after 1.5 s; the engine links boxes 1 unit larger, so 35 units apart on an axis is still inside
+void RcCoop_StepOff( CBaseEntity *pPlayer )
+{
+	if ( !RcCoopRules() || !pPlayer )
+		return;
+	for ( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBaseEntity *pEnt = UTIL_PlayerByIndex( i );
+		if ( !RcCoopPresent( pEnt ) || pEnt == pPlayer )
+			continue;
+		Vector d = pEnt->pev->origin - pPlayer->pev->origin;
+		if ( fabs( d.x ) < 35 && fabs( d.y ) < 35 && fabs( d.z ) < 72 )
+		{
+			RcCoopStepAside( pPlayer, pEnt );
+			return;
+		}
+	}
+}
+
 // G18: a player who joins the game (not a respawn, which gets his own things back) gets the weapons of the teammate
 // he comes in next to, so a late joiner is not left with nothing; the group's keys come by themselves (G9)
 void CHalfLifeStoryCoop::PlayerSpawn( CBasePlayer *pPlayer )
@@ -491,6 +511,7 @@ void CHalfLifeStoryCoop::Think( void )
 	CHalfLifeMultiplay::Think();
 
 	RcCoopHold();	// B472
+	RcDoor_Frame( false );	// B549: teammates going through a door alongside its user come out
 
 	// B503: a player a group teleport found in a door or on a ladder goes to the group once he is out
 	for ( int f = 1; f <= gpGlobals->maxClients && f <= 32; f++ )
@@ -1360,6 +1381,7 @@ bool RcCoop_ExitReady( CBaseEntity *pTrigger, CBaseEntity *pActivator, bool bTou
 	if ( !bGo )
 		return false;
 
+	RcDoor_Frame( true );	// B549: everyone in a door's sequence comes out first, or the change takes him along frozen
 	RcCoopGather( pTrigger, pActivator );
 	s_hRcWaitExit = NULL;
 	s_bRcGoNow = false;
