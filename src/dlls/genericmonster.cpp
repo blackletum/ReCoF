@@ -241,6 +241,8 @@ void CGenericMonster :: Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_
 		if ( pPlayer )
 			pPlayer->m_iKeypadNumber = codenumber;
 	}
+
+	RcCoop_KeypadCode( codenumber, -1 );	// ReCoF story co-op (B553): the whole group's at once
 }
 
 //=========================================================
