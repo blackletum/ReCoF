@@ -515,6 +515,17 @@ bool RcLobby_Invite( void )
 	return true;
 }
 
+// B547: the host's game has its address: the lobby's guests join it by themselves. "start" changes with every
+// game, so the same address (Steam keeps it for the whole session) is followed again for the next one
+static void RcLobbyPublish( void )
+{
+	char sz[16];
+	_snprintf( sz, sizeof( sz ) - 1, "%lu", GetTickCount() );
+	sz[sizeof( sz ) - 1] = 0;
+	RcLobby_SetData( "connect", s_szConnect );
+	RcLobby_SetData( "start", sz );
+}
+
 // the host's game is up: the guests follow its connect value (once each; again after the guest's own game was left
 // only through the panel's Join game)
 static void RcLobbyFollow( void )
@@ -540,10 +551,12 @@ static void RcLobbyFollow( void )
 		RcCoopMenu_BackToLobby();
 		return;
 	}
-	if ( pszConnect[0] && strcmp( pszConnect, s_szLobbyJoined ) )
+	char szGame[sizeof( s_szLobbyJoined )];	// B547: this game of the host's, its address and its start
+	_snprintf( szGame, sizeof( szGame ) - 1, "%s|%s", pszConnect, RcLobby_Data( "start" ) );
+	szGame[sizeof( szGame ) - 1] = 0;
+	if ( pszConnect[0] && strcmp( szGame, s_szLobbyJoined ) )
 	{
-		strncpy( s_szLobbyJoined, pszConnect, sizeof( s_szLobbyJoined ) - 1 );
-		s_szLobbyJoined[sizeof( s_szLobbyJoined ) - 1] = 0;
+		strcpy( s_szLobbyJoined, szGame );
 		RcLog( "lobby: the host's game is up, joining (%s)", pszConnect );
 		if ( s_pfnLobbyJoin )
 			s_pfnLobbyJoin( pszConnect );
@@ -688,6 +701,17 @@ static bool RcStart( bool bRelayOnly )
 bool RcSteamNet_Host( int iServerPort, bool bRelayOnly, bool bMap127, RcSteamPrint_t pfnPrint )
 {
 	s_pfnPrint = pfnPrint;
+	// B547: another game from the same lobby (the host back in it after a game): the Steam address stays, and the
+	// lobby's guests get it again. It printed "already started" and the guests never joined the second game
+	if ( s_iMode == RCSN_HOST )
+	{
+		if ( s_iIPState == 3 && RcLobby_Owner() )
+		{
+			RcLobbyPublish();
+			s_pfnPrint( "ReCoF co-op: the lobby's friends are joining\n" );
+		}
+		return true;
+	}
 	if ( s_iMode != RCSN_OFF )
 	{
 		s_pfnPrint( "ReCoF co-op: already started\n" );
@@ -795,7 +819,7 @@ void RcSteamNet_Frame( void )
 				s_szConnect[sizeof( s_szConnect ) - 1] = 0;
 				if ( RcLobby_Owner() )
 				{
-					RcLobby_SetData( "connect", s_szConnect );	// B406: the lobby's guests join by themselves
+					RcLobbyPublish();	// B406: the lobby's guests join by themselves
 					s_pfnPrint( "ReCoF co-op: the lobby's friends are joining\n" );
 				}
 				else if ( RcFriends() )
