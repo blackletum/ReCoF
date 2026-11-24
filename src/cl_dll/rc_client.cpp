@@ -717,8 +717,15 @@ static void RcCoopCmdFile( void )
 // menu's too: hw.dll sets rc_coop_left) and a game elsewhere (not the menu's background map) stop it
 static void RcCoopLeave_f( void )
 {
-	RcLobby_Leave();	// B406: out of the group's lobby too
 	s_bCoopLeft = 1;
+	// B546: the group's lobby stays (only its own Leave button leaves it): a player in one goes back to it on the
+	// menu, where Join game takes him back in. B406 left the lobby too, and a host who left took it from everyone
+	if ( RcLobby_State() == RCLOBBY_IN )
+	{
+		RcCoopPrint( "ReCoF co-op: left the game, back in the lobby\n" );
+		RcCoopMenu_Lobby();
+		return;
+	}
 	gEngfuncs.pfnClientCmd( "disconnect\n" );
 	RcCoopPrint( "ReCoF co-op: left the game; rc_coop_join to come back\n" );
 }
