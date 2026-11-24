@@ -167,6 +167,11 @@ public:
 	void RcSetupHLLadder( void );
 	EHANDLE m_hRcLadder;		// ReCoF (rc_hlmovement): the Half-Life ladder (CRcHLLadder), when the ladder has one
 	BOOL m_bRcLadderChecked;	// ReCoF (rc_hlmovement): RcSetupHLLadder ran, and which form of it (RC_LADDER_CHECK)
+	// ReCoF story co-op (B551): a copy made for a second climber (RcClimbCopy), removed once he is off; and the
+	// climb's queued lowering, each ladder's own in story co-op (wasqueuedtoreduceorigin is one for every ladder)
+	BOOL m_bRcCopy;
+	bool m_bRcQueued;
+	void RcClimbCopy( CBaseEntity *pActivator, float value );
 };
 
 TYPEDESCRIPTION CCoFLadderManager::m_SaveData[] =
@@ -196,6 +201,7 @@ TYPEDESCRIPTION CCoFLadderManager::m_SaveData[] =
 	DEFINE_FIELD( CCoFLadderManager, m_sBottomEnt, FIELD_STRING ),
 	DEFINE_FIELD( CCoFLadderManager, m_hRcLadder, FIELD_EHANDLE ),
 	DEFINE_FIELD( CCoFLadderManager, m_bRcLadderChecked, FIELD_BOOLEAN ),
+	DEFINE_FIELD( CCoFLadderManager, m_bRcCopy, FIELD_BOOLEAN ),	// ReCoF (B551)
 };
 
 IMPLEMENT_SAVERESTORE( CCoFLadderManager, CPointEntity );
@@ -422,6 +428,19 @@ void CCoFLadderManager::KeyValue( KeyValueData *pkvd )
 
 void CCoFLadderManager::LadderThink( void )
 {
+	// ReCoF story co-op (B551): a copy whose climber is gone (left the game, or his climb camera was taken) goes too
+	if ( m_bRcCopy && ( !m_pPlayer || !m_pPlayer->pDeathScene || m_pPlayer->pev->fuser4 != 0 ) )
+	{
+		if ( m_pPlayer && m_pPlayer->pDeathScene )
+		{
+			UTIL_Remove( m_pPlayer->pDeathScene );
+			m_pPlayer->pDeathScene = NULL;
+			m_pPlayer->m_pAttachedCamera = NULL;
+		}
+		UTIL_Remove( this );
+		return;
+	}
+
 	if ( m_bDoLower && m_flLowerTime < gpGlobals->time && m_pPlayer && m_pPlayer->pDeathScene )
 	{
 		m_bDoLower = false;
@@ -524,6 +543,14 @@ void CCoFLadderManager::LadderThink( void )
 			FireTargets( STRING( pev->target ), m_pPlayer, m_pPlayer, USE_TOGGLE, 0 );
 
 		m_bEnableControl = false;
+
+		// ReCoF story co-op (B551): off on a teammate's spot, he steps aside; a copy goes once its climber is off
+		RcCoop_StepOff( m_pPlayer );
+		if ( m_bRcCopy )
+		{
+			SetThink( &CBaseEntity::SUB_Remove );
+			SetNextThink( 0.1 );
+		}
 		return;
 	}
 
@@ -589,7 +616,13 @@ void CCoFLadderManager::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_
 	{
 		char *pszInfo = g_engfuncs.pfnGetInfoKeyBuffer( m_pPlayer->edict() );
 		if ( m_pPlayer->pev->fuser4 == 0 && pszInfo && pszInfo[0] )
+		{
+			// ReCoF story co-op (B551): a teammate on the ladder does not keep this player off: a copy of the
+			// ladder takes him, as each climb's state is its manager's
+			if ( m_pPlayer != pActivator && RcCoop_Story() )
+				RcClimbCopy( pActivator, value );
 			return;
+		}
 		UTIL_Remove( m_pPlayer->pDeathScene );
 		m_pPlayer->pDeathScene = NULL;
 		m_pPlayer->m_pAttachedCamera = NULL;
@@ -689,17 +722,20 @@ void CCoFLadderManager::StartNextAnimation( void )
 	if ( !pPlayer->pDeathScene )
 		return;
 
+	// ReCoF story co-op (B551): with two climbers at once, the lowering queued on one ladder is that ladder's
+	bool &bQueued = RcCoop_Story() ? m_bRcQueued : wasqueuedtoreduceorigin;
+
 	if ( m_bOriginReductionQueuedNext )
 	{
 		m_bOriginReductionQueuedNext = false;
-		wasqueuedtoreduceorigin = true;
+		bQueued = true;
 		pPlayer->pDeathScene->pev->origin.z -= 48;
 	}
 
 	if ( m_iCurrentAnimation > 1 && !m_bDescending && !strstr( STRING( m_sPreviousAnimation ), "climb_loop_down" ) )
 	{
-		if ( wasqueuedtoreduceorigin )
-			wasqueuedtoreduceorigin = false;
+		if ( bQueued )
+			bQueued = false;
 		else if ( !m_bGotOnButNotDescended )
 			pPlayer->pDeathScene->pev->origin.z += 48;
 	}
@@ -885,6 +921,43 @@ void CCoFLadderManager::StartPreviousAnimation( void )
 }
 
 LINK_ENTITY_TO_CLASS( cof_ladder_manager, CCoFLadderManager );
+
+// ReCoF story co-op (B551): a second climber while a teammate climbs gets a copy of this ladder: the same model,
+// animations, ends and Half-Life ladder, no name and no target (nothing in the map fires it, and the first climb
+// fires the ladder's target), removed once he is off (LadderThink)
+void CCoFLadderManager::RcClimbCopy( CBaseEntity *pActivator, float value )
+{
+	CCoFLadderManager *pCopy = GetClassPtr( (CCoFLadderManager *)NULL );
+
+	if ( !pCopy )
+		return;
+
+	pCopy->pev->classname = MAKE_STRING( "cof_ladder_manager" );
+	pCopy->pev->origin = pev->origin;
+	pCopy->pev->angles = pev->angles;
+	pCopy->pev->model = pev->model;
+
+	for ( int i = 0; i < 33; i++ )
+		pCopy->m_cAnimation[i] = m_cAnimation[i];
+
+	pCopy->m_iNumAnimations = m_iNumAnimations;
+	pCopy->m_sCustomOffAnimation = m_sCustomOffAnimation;
+	pCopy->m_sCustomOnAnimation = m_sCustomOnAnimation;
+	pCopy->m_sCustomOffDescendAnimation = m_sCustomOffDescendAnimation;
+	pCopy->m_sCustomOnDescendAnimation = m_sCustomOnDescendAnimation;
+	pCopy->m_sTopEnt = m_sTopEnt;
+	pCopy->m_sBottomEnt = m_sBottomEnt;
+	pCopy->m_eTopEnt = m_eTopEnt;
+	pCopy->m_eBottomEnt = m_eBottomEnt;
+	pCopy->m_iDescendOffset = m_iDescendOffset;
+	pCopy->m_hRcLadder = m_hRcLadder;
+	pCopy->m_bRcLadderChecked = m_bRcLadderChecked;
+	pCopy->m_bRcCopy = TRUE;
+	pCopy->Spawn();
+
+	g_engfuncs.pfnServerPrint( UTIL_VarArgs( "ReCoF co-op: %s climbs the ladder %s is on\n", STRING( pActivator->pev->netname ), STRING( m_pPlayer->pev->netname ) ) );
+	pCopy->Use( pActivator, this, USE_TOGGLE, value );
+}
 
 // ReCoF (rc_hlmovement): the height of the floor under a standing player's origin
 static float RcFloorBelow( const Vector &vecOrigin, edict_t *pentIgnore )
@@ -1084,6 +1157,8 @@ TYPEDESCRIPTION CCoFLadderManagerUse::m_SaveData[] =
 	DEFINE_FIELD( CCoFLadderManagerUse, m_sMaster, FIELD_STRING ),
 };
 
+static float s_flRcLadderNext[33];	// ReCoF story co-op (B551): each player's own next ladder use
+
 IMPLEMENT_SAVERESTORE_RC( CCoFLadderManagerUse, CBaseToggle );	// ReCoF (B086): retail named CBaseEntity, so the CBaseToggle chain was not saved
 
 LINK_ENTITY_TO_CLASS( cof_ladder_manager_use, CCoFLadderManagerUse );
@@ -1120,7 +1195,13 @@ void CCoFLadderManagerUse::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 	if ( !UTIL_IsMasterTriggered( m_sMaster, pActivator ) )
 		return;
 
-	if ( m_flNextUse > gpGlobals->time )
+	// ReCoF story co-op (B551): the 1 s between uses is each player's own: a teammate who had just climbed kept him
+	// off (a time from another level, where the clock started again, does not count)
+	int iRc = RcCoop_Story() ? ENTINDEX( pActivator->edict() ) : 0;
+	if ( iRc < 1 || iRc > 32 )
+		iRc = 0;
+
+	if ( iRc ? ( s_flRcLadderNext[iRc] > gpGlobals->time && s_flRcLadderNext[iRc] - gpGlobals->time <= 1 ) : m_flNextUse > gpGlobals->time )
 		return;
 
 	CBasePlayer *pPlayer = GetClassPtr( (CBasePlayer *)pActivator->pev );
@@ -1156,7 +1237,10 @@ void CCoFLadderManagerUse::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 			FireTargets( STRING( pev->target ), pPlayer, pPlayer, USE_TOGGLE, pev->iuser1 );
 	}
 
-	m_flNextUse = gpGlobals->time + 1;
+	if ( iRc )
+		s_flRcLadderNext[iRc] = gpGlobals->time + 1;	// ReCoF (B551)
+	else
+		m_flNextUse = gpGlobals->time + 1;
 }
 
 class CCoFLadderEndTop : public CPointEntity
