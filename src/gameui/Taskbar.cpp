@@ -401,7 +401,7 @@ static void RcAddCoopMenuItems( KeyValues *datafile )
 {
 	static const char *s_pszItems[3][4] =
 	{
-		{ "RcCoopHost", "Co-op", "engine rc_coop_lobby", "notmulti" },	// B408: the lobby, on the main menu (B497: "Co-op")
+		{ "RcCoopHost", "Co-op (Beta)", "engine rc_coop_lobby", "notmulti" },	// B408: the lobby, on the main menu (B497: "Co-op", B541: "(Beta)")
 		{ "RcCoopInvite", "Invite friends", "engine rc_coop_invite", "notsingle" },
 		{ "RcCoopLeave", "Leave co-op", "engine rc_coop_leave", "notsingle" },
 	};

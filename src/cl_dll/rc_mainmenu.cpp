@@ -25,7 +25,7 @@ struct RcMainItem_t
 
 static const RcMainItem_t s_RcMainPage[] =
 {
-	{ "New Game", 1 }, { "Load Game", 2 }, { "Co-op", RC_CMD_COOP }, { "Custom Campaign", 3 },
+	{ "New Game", 1 }, { "Load Game", 2 }, { "Co-op (Beta)", RC_CMD_COOP }, { "Custom Campaign", 3 },	// B541: (Beta)
 	{ "Extras", RC_CMD_EXTRAS }, { "Options", 5 }, { "Quit", 10 },
 };
 static const RcMainItem_t s_RcExtrasPage[] =
