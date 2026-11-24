@@ -23,6 +23,7 @@ extern engine_studio_api_t IEngineStudio;
 extern CGameStudioModelRenderer g_StudioRenderer;
 extern cvar_t *cl_smokeparticlelimit;
 extern vec3_t v_angles;
+extern vec3_t render_angles;	// ReCoF (B543): view.cpp, the angles the frame is drawn with
 extern vec3_t vecCameraAngles_guess;
 extern cl_entity_t *pAttachCamEnt_guess;
 
@@ -869,6 +870,10 @@ void ParticleSystem::DrawSystem()//vec3_t &right, vec3_t &up)
 			if ( pView )
 				gEngfuncs.GetViewAngles((float*)pView->angles);
 		}
+
+		// ReCoF (B543): retail never set normal on this path, so the particles faced whatever the stack held
+		// (about 0 0 0, along the map's X axis) instead of the cutscene camera
+		VectorCopy( render_angles, normal );
 	}
 	else
 	{
