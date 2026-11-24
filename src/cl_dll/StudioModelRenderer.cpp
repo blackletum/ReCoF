@@ -742,11 +742,17 @@ StudioEstimateFrame
 
 ====================
 */
+extern cl_entity_t *pAttachCamEnt_guess;	// hud_msg.cpp
+
 float CStudioModelRenderer::StudioEstimateFrame( mstudioseqdesc_t *pseqdesc )
 {
 	double				dfdt, f;
 
-	if ( m_fDoInterp )
+	// ReCoF (B552): the model the view is attached to (the ladder climb, a third person scene) is drawn without
+	// interpolation (StudioDrawModel), and the server moves its frame on each frame: in multiplayer the client sees
+	// a new frame only with each update (cl_updaterate, 30 a second or fewer), so the climb stepped. Its frame goes
+	// on from the last update as every other model's does; its place and the blend between its animations do not
+	if ( m_fDoInterp || ( pAttachCamEnt_guess && m_pCurrentEntity == pAttachCamEnt_guess && gEngfuncs.GetMaxClients() > 1 ) )
 	{
 		if ( m_clTime < m_pCurrentEntity->curstate.animtime )
 		{
