@@ -2315,6 +2315,13 @@ void PF_MessageEnd_I( void )
 			return;
 	}
 
+	// ReCoF (B545): a message to one player that did not fit in his reliable buffer (3990 bytes, which go out only
+	// once his game has acknowledged the last reliable packet) overflowed it, and the server dropped him. The buffer
+	// goes to the fragment queue first, as the reliable datagram and the reliable events already do, so the order
+	// stays
+	if ( gMsgDest == MSG_ONE && pBuffer->cursize + gMsgBuffer.cursize + 2 > pBuffer->maxsize )
+		Netchan_CreateFragments( TRUE, (netchan_t *)( (byte *)pBuffer - offsetof( netchan_t, message ) ), pBuffer );
+
 	MSG_WriteByte( pBuffer, gMsgType );
 	if ( MsgIsVarLength )
 		MSG_WriteByte( pBuffer, gMsgBuffer.cursize );
