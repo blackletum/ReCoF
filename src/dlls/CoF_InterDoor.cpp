@@ -244,6 +244,11 @@ void CInterDoor::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE us
 		return;
 	}
 
+	// ReCoF story co-op (B550): the group waits at this door into a level exit: this player is ready too (even
+	// within 1 s of a teammate's use)
+	if ( RcCoop_DoorWaiting( this ) && !IsLocked() && RcCoop_DoorWait( this, pActivator ) )
+		return;
+
 	if ( m_fNextUse > gpGlobals->time )
 		return;
 
@@ -314,7 +319,7 @@ void CInterDoor::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE us
 		if ( pev->noise2 )
 			EMIT_SOUND( ENT( pev ), CHAN_BODY, STRING( pev->noise2 ), 1, 0.8 );
 	}
-	else
+	else if ( !RcCoop_DoorWait( this, pActivator ) )	// ReCoF story co-op (B550): a door into an exit waits for the group
 	{
 		pev->owner = pActivator->edict();
 		StartSequence();

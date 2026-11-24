@@ -501,6 +501,7 @@ void RcCoop_PlayerCmd( CBasePlayer *pPlayer )
 static void RcCoopSyncKeys( void );
 static void RcCoopSyncCodes( void );
 static void RcCoopSyncNightmare( void );	// B396
+static void RcCoopDoorWaitFrame( void );	// B550
 static float s_flRcNextKeySync;
 
 void CHalfLifeStoryCoop::Think( void )
@@ -512,6 +513,7 @@ void CHalfLifeStoryCoop::Think( void )
 
 	RcCoopHold();	// B472
 	RcDoor_Frame( false );	// B549: teammates going through a door alongside its user come out
+	RcCoopDoorWaitFrame();	// B550
 
 	// B503: a player a group teleport found in a door or on a ladder goes to the group once he is out
 	for ( int f = 1; f <= gpGlobals->maxClients && f <= 32; f++ )
@@ -1306,6 +1308,7 @@ void RcCoop_Unstuck( CBasePlayer *pPlayer )
 static EHANDLE s_hRcWaitExit;
 static float s_flRcWaitStart, s_flRcWaitTouch, s_flRcWaitMsg;
 static bool s_bRcGoNow;
+static float s_flRcDoorGo;	// B550: until then the exit a door's group came through goes at once, 0 for none
 
 // CChangeLevel::ChangeLevelNow: true to change level now. Outside story co-op always true.
 bool RcCoop_ExitReady( CBaseEntity *pTrigger, CBaseEntity *pActivator, bool bTouch )
@@ -1341,7 +1344,10 @@ bool RcCoop_ExitReady( CBaseEntity *pTrigger, CBaseEntity *pActivator, bool bTou
 	}
 
 	float flWait = rc_coop_exit_wait.value;
-	bool bGo = !bTouch || flWait <= 0 || nInside >= nPresent || s_bRcGoNow;
+	// B550: the group came to this exit through a door together (or the door's wait is over): it goes at once, and
+	// brings anyone who did not come
+	bool bDoorGo = s_flRcDoorGo > 0 && gpGlobals->time < s_flRcDoorGo && s_flRcDoorGo - gpGlobals->time <= 10;
+	bool bGo = !bTouch || flWait <= 0 || nInside >= nPresent || s_bRcGoNow || bDoorGo;
 	if ( !bGo )
 	{
 		// B474: first come, first served: while someone stands in the exit that is waiting, another exit does not
@@ -1385,6 +1391,7 @@ bool RcCoop_ExitReady( CBaseEntity *pTrigger, CBaseEntity *pActivator, bool bTou
 	RcCoopGather( pTrigger, pActivator );
 	s_hRcWaitExit = NULL;
 	s_bRcGoNow = false;
+	s_flRcDoorGo = 0;
 	pRules->m_iExitGone = iMe;	// B474
 	pRules->m_flExitGone = gpGlobals->time;
 	return true;
@@ -1395,6 +1402,141 @@ static void RcCoopGo( void )
 {
 	s_bRcGoNow = true;
 	g_engfuncs.pfnServerPrint( "ReCoF co-op: the next exit touch goes now\n" );
+}
+
+// B550: most of the story's ways into the next map are an inter_door whose exit is a closed black room around a
+// trigger_changelevel (c_start's door to c_apartment1 and over a hundred more): the first player through waited in
+// that room, in the dark, until the exit's wait brought the others. Such a door waits for the group in front of it
+// instead: each player who uses it is ready while he stays by it, and when everyone is (or rc_coop_exit_wait is
+// over) the ready ones go through together and the exit goes as soon as one of them is in it, bringing the rest
+static EHANDLE s_hRcDoorWait;	// the door the group gathers at
+static float s_flRcDoorWaitStart, s_flRcDoorWaitMsg;
+static bool s_bRcDoorReady[33];	// this player used it and stays by it
+
+// the door puts its user inside a level exit a player can walk into (EndSequence: its target, 37 units up)
+static bool RcCoopDoorToExit( CBaseEntity *pDoor )
+{
+	if ( !pDoor->pev->target )
+		return false;
+	const char *pszTarget = STRING( pDoor->pev->target );
+	if ( !strcmp( pszTarget, "endingcheck" ) )
+		pszTarget = "ending_exit1";	// c_village3's door to the endings: each of its exits is such a room
+	CBaseEntity *pTarget = UTIL_FindEntityByTargetname( NULL, pszTarget );
+	if ( !pTarget )
+		return false;
+	Vector vecSpot = pTarget->pev->origin + Vector( 0, 0, 37 );
+	Vector vecMin = vecSpot + VEC_HULL_MIN, vecMax = vecSpot + VEC_HULL_MAX;
+	CBaseEntity *pTrig = NULL;
+	while ( ( pTrig = UTIL_FindEntityByClassname( pTrig, "trigger_changelevel" ) ) != NULL )
+	{
+		if ( pTrig->pev->spawnflags & 2 )
+			continue;	// SF_CHANGELEVEL_USEONLY: fired, never touched
+		if ( vecMin.x <= pTrig->pev->absmax.x && vecMax.x >= pTrig->pev->absmin.x && vecMin.y <= pTrig->pev->absmax.y &&
+			vecMax.y >= pTrig->pev->absmin.y && vecMin.z <= pTrig->pev->absmax.z && vecMax.z >= pTrig->pev->absmin.z )
+			return true;
+	}
+	return false;
+}
+
+bool RcCoop_DoorWaiting( CBaseEntity *pDoor )
+{
+	return pDoor && RcCoopRules() && (CBaseEntity *)s_hRcDoorWait == pDoor;
+}
+
+// the players ready by the waiting door (one who walked off is not) and the players in the game
+static void RcCoopDoorCount( CBaseEntity *pDoor, int &nReady, int &nPresent )
+{
+	Vector vecDoor = ( pDoor->pev->absmin + pDoor->pev->absmax ) * 0.5;
+	nReady = nPresent = 0;
+	for ( int i = 1; i <= gpGlobals->maxClients && i <= 32; i++ )
+	{
+		CBaseEntity *pEnt = UTIL_PlayerByIndex( i );
+		if ( !RcCoopPresent( pEnt ) )
+		{
+			s_bRcDoorReady[i] = false;
+			continue;
+		}
+		nPresent++;
+		if ( s_bRcDoorReady[i] && ( pEnt->pev->origin - vecDoor ).Length() > 192 )
+			s_bRcDoorReady[i] = false;
+		if ( s_bRcDoorReady[i] )
+			nReady++;
+	}
+}
+
+static void RcCoopDoorGo( CBaseEntity *pDoor, bool bEveryone )
+{
+	s_hRcDoorWait = NULL;
+	s_flRcDoorGo = gpGlobals->time + 10;
+	g_engfuncs.pfnServerPrint( bEveryone ? "ReCoF co-op: everyone is at the door, through it together\n" : "ReCoF co-op: the door's wait is over, through it\n" );
+	for ( int i = 1; i <= gpGlobals->maxClients && i <= 32; i++ )
+	{
+		if ( !s_bRcDoorReady[i] )
+			continue;
+		s_bRcDoorReady[i] = false;
+		RcDoor_Pass( pDoor, UTIL_PlayerByIndex( i ) );
+	}
+}
+
+bool RcCoop_DoorWait( CBaseEntity *pDoor, CBaseEntity *pActivator )
+{
+	if ( !RcCoopRules() || rc_coop_exit_wait.value <= 0 || !pDoor || !pActivator || !pActivator->IsPlayer() )
+		return false;
+	int a = ENTINDEX( pActivator->edict() );
+	if ( a < 1 || a > 32 || !RcCoopDoorToExit( pDoor ) )
+		return false;
+	if ( (CBaseEntity *)s_hRcDoorWait != pDoor )
+	{
+		// a new wait (one at another door ends: its players can come here)
+		memset( s_bRcDoorReady, 0, sizeof( s_bRcDoorReady ) );
+		s_hRcDoorWait = pDoor;
+		s_flRcDoorWaitStart = gpGlobals->time;
+	}
+	s_bRcDoorReady[a] = true;
+	s_flRcDoorWaitMsg = 0;
+	int nReady, nPresent;
+	RcCoopDoorCount( pDoor, nReady, nPresent );
+	if ( nReady >= nPresent )
+		RcCoopDoorGo( pDoor, true );
+	else
+		g_engfuncs.pfnServerPrint( UTIL_VarArgs( "ReCoF co-op: %s waits at the door to the exit, %d of %d players\n", STRING( pActivator->pev->netname ), nReady, nPresent ) );
+	return true;
+}
+
+// CHalfLifeStoryCoop::Think: the door's wait goes once everyone is by it, the host's rc_coop_go or the wait is over
+static void RcCoopDoorWaitFrame( void )
+{
+	CBaseEntity *pDoor = s_hRcDoorWait;
+	if ( !pDoor )
+		return;
+	int nReady, nPresent;
+	RcCoopDoorCount( pDoor, nReady, nPresent );
+	float flWait = rc_coop_exit_wait.value;
+	float flLeft = s_flRcDoorWaitStart + flWait - gpGlobals->time;
+	if ( !nReady || flWait <= 0 || flLeft > flWait + 1 )
+	{
+		s_hRcDoorWait = NULL;	// nobody waits by it any more (or the wait began on another level)
+		return;
+	}
+	if ( nReady >= nPresent || flLeft <= 0 || s_bRcGoNow )
+	{
+		RcCoopDoorGo( pDoor, nReady >= nPresent );
+		return;
+	}
+	if ( gpGlobals->time >= s_flRcDoorWaitMsg || gpGlobals->time < s_flRcDoorWaitMsg - 2 )
+	{
+		s_flRcDoorWaitMsg = gpGlobals->time + 1.0;
+		hudtextparms_t tp;
+		memset( &tp, 0, sizeof( tp ) );
+		tp.x = -1;
+		tp.y = 0.8;
+		tp.r1 = tp.g1 = tp.b1 = 220;
+		tp.a1 = 255;
+		tp.fadeoutTime = 0.2;
+		tp.holdTime = 1.2;
+		tp.channel = 4;
+		RcCoopHudMessage( tp, UTIL_VarArgs( "Waiting at the door: %d of %d players (%d s)", nReady, nPresent, (int)( flLeft + 0.99 ) ) );
+	}
 }
 
 // a story co-op game (the effects that reach only the first player in single player reach everyone)
