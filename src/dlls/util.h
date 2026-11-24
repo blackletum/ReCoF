@@ -251,6 +251,14 @@ extern bool		RcCoop_Story( void );
 // ReCoF story co-op (B389): the player in the game nearest to pFrom (bVisible: the nearest it sees, when it sees
 // any), else the first player as UTIL_FirstPlayer_rc; outside story co-op always the first player (rc_coop.cpp)
 extern CBaseEntity	*RcCoop_NearestPlayer( CBaseEntity *pFrom, bool bVisible );
+// ReCoF story co-op (B549): a player put where a teammate stands (two through one door, two up one ladder) steps
+// aside at once (rc_coop.cpp)
+extern void		RcCoop_StepOff( CBaseEntity *pPlayer );
+// ReCoF story co-op (B549): pPlayer goes through the inter_door pDoor, as its user or alongside the one in it; and
+// each frame the players alongside come out on time (bAll: everyone in a door's sequence now, before a level change)
+// (CoF_InterDoor.cpp)
+extern void		RcDoor_Pass( CBaseEntity *pDoor, CBaseEntity *pPlayer );
+extern void		RcDoor_Frame( bool bAll );
 // ReCoF (B328): a player's own setting, from the private userinfo key ReCoF's client sends (util.cpp)
 extern float		UTIL_PlayerSetting_rc( CBaseEntity *pPlayer, const char *key, const char *cvar );
 
