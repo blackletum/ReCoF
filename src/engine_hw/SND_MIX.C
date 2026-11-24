@@ -770,6 +770,18 @@ void S_PaintChannels( int endtime )
 		// paint in the channels.
 		if ( !cl.paused && !s_careerAudioPaused )
 			S_MixChannelsToPaintbuffer( end, 0, 0 );
+		else
+		{
+			// ReCoF (B544): while paused nothing is mixed, but paintedtime goes on and each channel ends at a set
+			// paintedtime, so a line playing when the Esc menu opened lost the time the menu was open, or all of it.
+			// Its end moves on with the clock (a free channel's end is set again when it is used), and it goes on
+			// where it stopped
+			channel_t	*ch = channels;
+			int			n = total_channels;
+
+			while ( n-- > 0 )
+				( ch++ )->end += count;
+		}
 
 		if ( 1 )
 		{
