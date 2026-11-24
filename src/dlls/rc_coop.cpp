@@ -1103,6 +1103,63 @@ static void RcCoopSyncCodes( void )
 	}
 }
 
+// B553: the codes are the group's from the moment they are made. The padlock code is rolled for each player as he
+// spawns, and a keypad code goes to one player (the first, or the one who set it off): RcCoopSyncCodes made it the
+// group's only at its next run, up to a second later, so a note read or a keypad opened in that second, or a
+// teammate's new roll, gave another code than the group's
+void RcCoop_PadlockCode( CBaseEntity *pEnt )
+{
+	if ( !RcCoopRules() || !pEnt || !pEnt->IsPlayer() )
+		return;
+	CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+	if ( !s_iRcTeamPad[1] )
+	{
+		CBasePlayer *pFrom = pPlayer;	// a teammate's code (the group's), else this player's own roll
+		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
+		{
+			CBaseEntity *pOther = UTIL_PlayerByIndex( i );
+			if ( !pOther || pOther == pEnt || !pOther->IsPlayer() || pOther->pev->fuser4 != 0 )
+				continue;
+			CBasePlayer *p = (CBasePlayer *)pOther;
+			if ( p->m_iPadlockNumber[1] && p->m_iPadlockNumber[2] && p->m_iPadlockNumber[3] && p->m_iPadlockNumber[4] )
+			{
+				pFrom = p;
+				break;
+			}
+		}
+		for ( int d = 1; d <= 4; d++ )
+			s_iRcTeamPad[d] = pFrom->m_iPadlockNumber[d];
+	}
+	for ( int d = 1; d <= 4; d++ )
+		pPlayer->m_iPadlockNumber[d] = s_iRcTeamPad[d];
+}
+
+void RcCoop_KeypadCode( int iCode, int iType )
+{
+	if ( !RcCoopRules() )
+		return;
+	if ( iCode >= 0 )
+		s_iRcTeamKeypad = iCode;
+	if ( iType >= 0 )
+		s_iRcTeamKeypadType = iType;
+	for ( int i = 1; i <= gpGlobals->maxClients && i <= 32; i++ )
+	{
+		CBaseEntity *pEnt = UTIL_PlayerByIndex( i );
+		if ( !pEnt || !pEnt->IsPlayer() || pEnt->pev->fuser4 != 0 )
+			continue;
+		CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+		if ( iCode >= 0 )
+			pPlayer->m_iKeypadNumber = s_iRcKeypadSet[i] = iCode;
+		if ( iType >= 0 )
+			pPlayer->m_iKeypadType = s_iRcKeypadTypeSet[i] = iType;
+	}
+}
+
+int RcCoop_TeamKeypad( void )
+{
+	return RcCoopRules() ? s_iRcTeamKeypad : -1;
+}
+
 // G5: cof_teleport moved pMoved. Fired by a trigger he walked into (an arrival room), the other players standing in
 // that trigger go with him (its wait would ignore their touch and leave them behind); fired by anything else (a scene's
 // relays and managers), the whole group goes. They land on free spots around him.

@@ -254,6 +254,12 @@ extern CBaseEntity	*RcCoop_NearestPlayer( CBaseEntity *pFrom, bool bVisible );
 // ReCoF story co-op (B549): a player put where a teammate stands (two through one door, two up one ladder) steps
 // aside at once (rc_coop.cpp)
 extern void		RcCoop_StepOff( CBaseEntity *pPlayer );
+// ReCoF story co-op (B553): the padlock code rolled for a player and a keypad code or picture given to one are the
+// whole group's at once (iCode or iType -1 leaves it as it is); the group's keypad code, -1 outside story co-op
+// (rc_coop.cpp)
+extern void		RcCoop_PadlockCode( CBaseEntity *pPlayer );
+extern void		RcCoop_KeypadCode( int iCode, int iType );
+extern int		RcCoop_TeamKeypad( void );
 // ReCoF story co-op (B549): pPlayer goes through the inter_door pDoor, as its user or alongside the one in it; and
 // each frame the players alongside come out on time (bAll: everyone in a door's sequence now, before a level change)
 // (CoF_InterDoor.cpp)

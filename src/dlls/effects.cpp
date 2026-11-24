@@ -2209,6 +2209,8 @@ void CEnvModel::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE use
 			if ( pPlayer )
 				pPlayer->m_iKeypadNumber = codenumber;
 		}
+
+		RcCoop_KeypadCode( codenumber, -1 );	// ReCoF story co-op (B553): the whole group's at once
 	}
 
 	if (ShouldToggle(useType, !(pev->spawnflags & SF_ENVMODEL_OFF)))
@@ -6893,10 +6895,16 @@ void CCofKeypad2::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE u
 	if ( pPlayer )
 	{
 		char szNumber[8];
-		sprintf( szNumber, "279%i", RANDOM_LONG( 1, 9 ) );
+		int iRcCode = RcCoop_TeamKeypad();	// ReCoF story co-op (B553): the group's 279x code when it has one
+
+		if ( iRcCode >= 2791 && iRcCode <= 2799 )
+			sprintf( szNumber, "%i", iRcCode );
+		else
+			sprintf( szNumber, "279%i", RANDOM_LONG( 1, 9 ) );
 
 		pPlayer->m_iKeypadNumber = atoi( szNumber );
 		pPlayer->m_iKeypadType = 1;
+		RcCoop_KeypadCode( pPlayer->m_iKeypadNumber, 1 );	// B553: and the whole group's at once
 
 
 
@@ -6938,6 +6946,7 @@ void CCofKeypad3::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE u
 	if ( pPlayer )
 	{
 		pPlayer->m_iKeypadType = 2;
+		RcCoop_KeypadCode( -1, 2 );	// ReCoF story co-op (B553): the whole group's keypad at once
 
 
 
@@ -6981,6 +6990,7 @@ void CCofKeypad4::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE u
 		{
 			pPlayer->m_iKeypadType = 2;
 			pPlayer->m_iKeypadNumber = 5247;
+			RcCoop_KeypadCode( 5247, 2 );	// ReCoF story co-op (B553): the whole group's at once
 
 			MESSAGE_BEGIN( MSG_ONE, gmsgKeypad, NULL, pPlayer->pev );
 				WRITE_BYTE( pPlayer->m_iKeypadType );

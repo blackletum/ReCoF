@@ -7572,6 +7572,8 @@ void CBasePlayer::Spawn( void )
 		m_iPadlockNumber[4] = RANDOM_LONG( 1, 9 );
 	}
 
+	RcCoop_PadlockCode( this );	// ReCoF story co-op (B553): the group's code, not one of his own
+
 	m_LadderAngles = g_vecZero;
 	m_OnStairs = false;
 	m_bUsedFirstSyringe = false;
