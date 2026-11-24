@@ -507,6 +507,15 @@ static void RcCoopStatus_f( void )
 static char s_szCoopStart[512];
 static DWORD s_dwCoopStartAt;
 
+// B548: the players the game's first level waits for (hl.dll rc_coop_expect): everyone in the group's lobby, 0
+// without one
+static int RcCoopLobbyCount( void )
+{
+	char szNames[4][48];
+	bool bHost[4], bSelf[4];
+	return RcLobby_State() == RCLOBBY_IN ? RcLobby_Members( szNames, bHost, bSelf, 4 ) : 0;
+}
+
 static void RcCoopStart_f( void )
 {
 	const char *pszMap = gEngfuncs.Cmd_Argc() > 1 ? gEngfuncs.Cmd_Argv( 1 ) : "c_intro";
@@ -533,7 +542,7 @@ static void RcCoopStart_f( void )
 		_snprintf( szRules, sizeof( szRules ) - 1, "rc_coop_simon %d\n", strcmp( pszMap, "c_intro" ) ? 0 : 1 );	// B411
 	szRules[sizeof( szRules ) - 1] = 0;
 	// B442: the rates for a story co-op host (sv_lan 1 capped each guest at sv_lan_rate, 20000 bytes a second)
-	_snprintf( s_szCoopStart, sizeof( s_szCoopStart ) - 1, "disconnect\nmaxplayers 4\nsv_lan 1\nsv_lan_rate 100000\nsv_maxupdaterate 60\nrc_coop 1\n%s%src_coop_host\nmap %s\n", szPreset, szRules, pszMap );
+	_snprintf( s_szCoopStart, sizeof( s_szCoopStart ) - 1, "disconnect\nmaxplayers 4\nsv_lan 1\nsv_lan_rate 100000\nsv_maxupdaterate 60\nrc_coop 1\n%s%src_coop_expect %d\nrc_coop_host\nmap %s\n", szPreset, szRules, RcCoopLobbyCount(), pszMap );
 	s_szCoopStart[sizeof( s_szCoopStart ) - 1] = 0;
 	s_dwCoopStartAt = GetTickCount() + 1500;
 }
@@ -563,7 +572,7 @@ static void RcCoopMp_f( void )
 	szSet[sizeof( szSet ) - 1] = 0;
 	// maxplayers 4 sets deathmatch 1 (net_ws.c MaxPlayers_f), and rc_coop 0 gives Cry of Fear's multiplayer rules
 	_snprintf( s_szCoopStart, sizeof( s_szCoopStart ) - 1, "disconnect\nmaxplayers 4\nsv_lan 1\nsv_lan_rate 100000\n"
-		"sv_maxupdaterate 60\nrc_coop 0\npausable 0\n%src_coop_host\nmap %s\n", szSet, pszMap );
+		"sv_maxupdaterate 60\nrc_coop 0\npausable 0\n%src_coop_expect 0\nrc_coop_host\nmap %s\n", szSet, pszMap );
 	s_szCoopStart[sizeof( s_szCoopStart ) - 1] = 0;
 	s_dwCoopStartAt = GetTickCount() + 1500;
 	s_bRcHostedClassic = 1;
@@ -604,7 +613,7 @@ static void RcCoopContinue_f( void )
 		}
 	}
 	szRules[sizeof( szRules ) - 1] = 0;
-	_snprintf( s_szCoopStart, sizeof( s_szCoopStart ) - 1, "disconnect\nmaxplayers 4\nsv_lan 1\nsv_lan_rate 100000\nsv_maxupdaterate 60\nrc_coop 1\nrc_coop_host\nload %s\n%s", gEngfuncs.Cmd_Argv( 1 ), szRules );	// B442
+	_snprintf( s_szCoopStart, sizeof( s_szCoopStart ) - 1, "disconnect\nmaxplayers 4\nsv_lan 1\nsv_lan_rate 100000\nsv_maxupdaterate 60\nrc_coop 1\nrc_coop_expect %d\nrc_coop_host\nload %s\n%s", RcCoopLobbyCount(), gEngfuncs.Cmd_Argv( 1 ), szRules );	// B442
 	s_szCoopStart[sizeof( s_szCoopStart ) - 1] = 0;
 	s_dwCoopStartAt = GetTickCount() + 1500;
 }

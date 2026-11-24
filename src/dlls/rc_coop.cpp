@@ -33,6 +33,9 @@ cvar_t	rc_coop_skip_vote = { "rc_coop_skip_vote", "1", FCVAR_SERVER };
 // police officers in a custom campaign; the lobby sets it with the campaign, a co-op save keeps it
 cvar_t	rc_coop_simon = { "rc_coop_simon", "1", FCVAR_SERVER };
 static bool s_bRcSkipVote[33];	// this player asked to skip the scene he is in
+// B548: how many players the first level of a game waits for: the host's game sets it to the players in the group's
+// lobby when it starts or continues a game (client.dll rc_client.cpp), and the arrival hold puts it back to 0
+cvar_t	rc_coop_expect = { "rc_coop_expect", "0" };
 
 extern bool m_bSpawningSimon;	// multiplay_gamerules.cpp: the police co-op's hunting Simon
 
@@ -1720,16 +1723,27 @@ void CHalfLifeStoryCoop::RcCoopHold( void )
 			nIn++;
 	}
 
-	bool bHold = nWait > 0 && gpGlobals->time - m_flHoldStart <= 20;
+	// B548: a game started from the lobby also waits for the lobby's players who have no slot yet (still connecting
+	// through Steam), so everyone starts together; 60 s at most for them
+	int nExpect = (int)rc_coop_expect.value;
+	if ( nExpect > nIn + nWait )
+		nWait = nExpect - nIn;
+	int iMax = nExpect > 1 ? 60 : 20;
+
+	bool bHold = nWait > 0 && gpGlobals->time - m_flHoldStart <= iMax;
 	if ( bHold && !g_bRcHolding && nIn + nWait > 1 )
 	{
 		g_bRcHolding = true;
-		g_engfuncs.pfnServerPrint( UTIL_VarArgs( "ReCoF co-op: the level waits for %d player(s) still loading (20 s at most)\n", nWait ) );
+		g_engfuncs.pfnServerPrint( UTIL_VarArgs( "ReCoF co-op: the level waits for %d player(s) still loading (%d s at most)\n", nWait, iMax ) );
 	}
 	if ( !g_bRcHolding )
 	{
 		if ( !bHold )
+		{
 			m_bHoldDone = true;	// nobody to wait for (or a lone player): no hold on this level
+			if ( nExpect )
+				CVAR_SET_FLOAT( "rc_coop_expect", 0 );
+		}
 		return;
 	}
 
@@ -1759,15 +1773,17 @@ void CHalfLifeStoryCoop::RcCoopHold( void )
 			tp.fadeoutTime = 0.2;
 			tp.holdTime = 1.2;
 			tp.channel = 4;
-			int nLeft = (int)( m_flHoldStart + 20 - gpGlobals->time + 0.99 );
+			int nLeft = (int)( m_flHoldStart + iMax - gpGlobals->time + 0.99 );
 			RcCoopHudMessage( tp, UTIL_VarArgs( "Waiting for the others to load: %d of %d players in (%d s)", nIn, nIn + nWait, nLeft > 0 ? nLeft : 0 ) );
 		}
 		return;
 	}
 
-	// everyone is in, or 20 s are over: the level goes on
+	// everyone is in, or 20 s (60 for a lobby's start) are over: the level goes on
 	g_bRcHolding = false;
 	m_bHoldDone = true;
+	if ( nExpect )
+		CVAR_SET_FLOAT( "rc_coop_expect", 0 );	// B548: later levels wait only for the players carried in
 	for ( int i = 1; i <= gpGlobals->maxClients && i <= 32; i++ )
 	{
 		if ( !m_bHeld[i] )
@@ -1778,7 +1794,7 @@ void CHalfLifeStoryCoop::RcCoopHold( void )
 			continue;
 		pEnt->pev->flags &= ~FL_FROZEN;
 	}
-	g_engfuncs.pfnServerPrint( UTIL_VarArgs( "ReCoF co-op: the level goes on (%s)\n", nWait ? "20 s are over" : "everyone is in" ) );
+	g_engfuncs.pfnServerPrint( UTIL_VarArgs( "ReCoF co-op: the level goes on (%s)\n", nWait ? "the wait is over" : "everyone is in" ) );
 }
 
 // rc_coop_dump (server command): every player's slot, health, place and weapons, for tests
@@ -2063,4 +2079,5 @@ void RcCoop_Init( void )
 	CVAR_REGISTER( &rc_coop_skip );
 	CVAR_REGISTER( &rc_coop_skip_vote );
 	CVAR_REGISTER( &rc_coop_simon );
+	CVAR_REGISTER( &rc_coop_expect );	// B548
 }
