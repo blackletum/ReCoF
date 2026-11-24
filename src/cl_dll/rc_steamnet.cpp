@@ -396,6 +396,7 @@ bool RcLobby_Create( void )
 }
 
 void RcCoopMenu_LeaveForLobby( unsigned long long ulLobby );	// B421, rc_coopmenu.cpp
+void RcCoopMenu_BackToLobby( void );	// B546, rc_coopmenu.cpp
 
 void RcLobby_Join( unsigned long long ulLobby )
 {
@@ -530,6 +531,15 @@ static void RcLobbyFollow( void )
 		return;
 	}
 	const char *pszConnect = RcLobby_Data( "connect" );
+	// B546: the host's game is over (back in the lobby, his panel clears connect): a guest who followed it goes
+	// back to the lobby too, instead of trying to reconnect to a game that is gone
+	if ( !pszConnect[0] && s_szLobbyJoined[0] )
+	{
+		s_szLobbyJoined[0] = 0;
+		RcLog( "lobby: the host's game is over, back to the lobby" );
+		RcCoopMenu_BackToLobby();
+		return;
+	}
 	if ( pszConnect[0] && strcmp( pszConnect, s_szLobbyJoined ) )
 	{
 		strncpy( s_szLobbyJoined, pszConnect, sizeof( s_szLobbyJoined ) - 1 );

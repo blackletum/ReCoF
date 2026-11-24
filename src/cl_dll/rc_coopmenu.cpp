@@ -1227,6 +1227,16 @@ void RcCoopMenu_LeaveForLobby( unsigned long long ulLobby )
 	gEngfuncs.pfnClientCmd( "disconnect;maxplayers 1;deathmatch 0;map c_game_menu1\n" );
 }
 
+// B546: the lobby's host ended the game and is back in the lobby: a guest still in that game, or dropped from it,
+// goes back to the lobby on the menu (on the menu already, the lobby is there)
+void RcCoopMenu_BackToLobby( void )
+{
+	const char *pszLevel = gEngfuncs.pfnGetLevelName();
+	if ( pszLevel && strstr( pszLevel, "game_menu" ) )
+		return;
+	RcCoopMenu_Lobby();
+}
+
 // CGameMenu::solve, each frame: the red picture and the shake under the cursor, as the menu's other entries
 void RcCoopMenu_Solve( void )
 {
